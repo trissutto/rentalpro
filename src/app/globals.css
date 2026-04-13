@@ -1,0 +1,160 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --nav-height: 64px;
+  --bottom-nav-height: 72px;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background-color: #f8fafc;
+  color: #0f172a;
+  overscroll-behavior-y: none;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* Calendar grid */
+.calendar-grid {
+  overflow-x: auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+/* Touch-friendly tap areas */
+.touch-target {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Status pill */
+.status-pill {
+  @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border;
+}
+
+/* Card base */
+.card {
+  @apply bg-white rounded-2xl shadow-card border border-slate-100 p-4;
+}
+
+/* FAB */
+.fab {
+  @apply fixed bottom-24 right-4 z-50 w-14 h-14 rounded-full shadow-lg
+         flex items-center justify-center text-white
+         bg-brand-600 hover:bg-brand-700
+         transition-all duration-200 active:scale-95;
+}
+
+/* Bottom nav */
+.bottom-nav {
+  @apply fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200
+         flex items-center justify-around;
+  height: var(--bottom-nav-height);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.bottom-nav-item {
+  @apply flex flex-col items-center justify-center gap-0.5 flex-1 py-2
+         text-slate-400 hover:text-brand-600 transition-colors;
+}
+
+.bottom-nav-item.active {
+  @apply text-brand-600;
+}
+
+/* Kanban column */
+.kanban-col {
+  @apply rounded-2xl p-3 flex flex-col gap-3 min-h-[200px];
+}
+
+/* Swipe card */
+.swipe-card {
+  @apply relative overflow-hidden rounded-2xl;
+}
+
+/* Page container (accounts for bottom nav) */
+.page-container {
+  @apply px-4 pt-4;
+  padding-bottom: calc(var(--bottom-nav-height) + 1rem);
+}
+
+/* Smooth transitions */
+.page-transition {
+  animation: fadeIn 0.2s ease-out;
+}
+
+/* Input base */
+.input-base {
+  @apply w-full rounded-xl border border-slate-200 bg-white px-4 py-3
+         text-sm placeholder-slate-400
+         focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent
+         transition-all duration-200;
+}
+
+/* Button variants */
+.btn-primary {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl
+         bg-brand-600 text-white font-medium px-5 py-3
+         hover:bg-brand-700 active:scale-95
+         transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+.btn-secondary {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl
+         bg-slate-100 text-slate-700 font-medium px-5 py-3
+         hover:bg-slate-200 active:scale-95
+         transition-all duration-200;
+}
+
+.btn-ghost {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl
+         text-slate-600 font-medium px-4 py-2.5
+         hover:bg-slate-100 active:scale-95
+         transition-all duration-200;
+}
+
+/* Calendar cell colors */
+.cal-reserved  { @apply bg-blue-500 text-white; }
+.cal-checkin   { @apply bg-green-500 text-white; }
+.cal-checkout  { @apply bg-red-500 text-white; }
+.cal-cleaning  { @apply bg-yellow-400 text-yellow-900; }
+.cal-blocked   { @apply bg-slate-400 text-white; }
+
+/* Loading skeleton */
+.skeleton {
+  @apply animate-pulse bg-slate-200 rounded-lg;
+}
+
+/* Modal backdrop */
+.modal-backdrop {
+  @apply fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-end md:items-center justify-center;
+}
+
+/* Modal content */
+.modal-content {
+  @apply bg-white w-full max-w-lg rounded-t-3xl md:rounded-2xl p-6 shadow-modal
+         animate-slide-up md:animate-fade-in;
+}

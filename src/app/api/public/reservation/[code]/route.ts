@@ -1,0 +1,47 @@
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: { code: string } }
+) {
+  const reservation = await prisma.reservation.findUnique({
+    where: { code: params.code.toUpperCase() },
+    include: {
+      property: {
+        select: {
+          name: true, address: true, city: true, state: true,
+          capacity: true, bedrooms: true, bathrooms: true,
+        },
+      },
+      guests: true,
+    },
+  });
+
+  if (!reservation) {
+    return NextResponse.json({ error: "Reserva não encontrada" }, { status: 404 });
+  }
+
+  return NextResponse.json({
+    reservation: {
+      id: reservation.id,
+      code: reservation.code,
+      guestName: reservation.guestName,
+      guestPhone: reservation.guestPhone,
+      guestCount: reservation.guestCount,
+      checkIn: reservation.checkIn,
+      checkOut: reservation.checkOut,
+      nights: reservation.nights,
+      totalAmount: reservation.totalAmount,
+      cleaningFee: reservation.cleaningFee,
+      status: reservation.status,
+      paymentStatus: reservation.paymentStatus,
+      paymentMethod: reservation.paymentMethod,
+      mpCheckoutUrl: reservation.mpCheckoutUrl,
+      paidAt: reservation.paidAt,
+      notes: reservation.notes,
+      property: reservation.property,
+      guests: reservation.guests,
+    },
+  });
+}

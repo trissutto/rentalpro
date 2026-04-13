@@ -1,0 +1,308 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  phone     String?
+  password  String
+  role      String   @default("TEAM")
+  specialty String?
+  avatar    String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ownedProperties Property[]             @relation("PropertyOwner")
+  cleanerProfile  Cleaner?
+  reservations    Reservation[]          @relation("CreatedBy")
+  transactions    FinancialTransaction[] @relation("CreatedBy")
+
+  @@map("users")
+}
+
+model Property {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  address     String
+  city        String
+  state       String
+  zipCode     String?
+  description String?
+  capacity    Int      @default(2)
+  bedrooms    Int      @default(1)
+  bathrooms   Int      @default(1)
+  basePrice   Float
+  cleaningFee    Float    @default(0)
+  commissionRate Float    @default(10)
+  photos         String   @default("[]")
+  coverPhoto  String?
+  rules       String?
+  amenities   String   @default("[]")
+  rooms       String   @default("[]")
+  active      Boolean  @default(true)
+  ownerId     String
+  // Guest capacity & extra fees
+  idealGuests    Int    @default(2)   // base price covers up to this many guests
+  maxGuests      Int    @default(6)   // hard limit — cannot book more than this
+  extraGuestFee  Float  @default(0)   // R$ per extra guest per night above idealGuests
+  // Access & check-in instructions
+  accessInstructions String?
+  wifiName           String?
+  wifiPassword       String?
+  checkInTime        String?  @default("14:00")
+  checkOutTime       String?  @default("12:00")
+  // iCal sync (Airbnb, Booking.com, etc.) — JSON array of {url, label, source}
+  icalUrls           String   @default("[]")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  owner        User          @relation("PropertyOwner", fields: [ownerId], references: [id])
+  reservations Reservation[]
+  cleanings    Cleaning[]
+  items        PropertyItem[]
+  roomList     Room[]
+  pricingRules PricingRule[]
+  expenses     FinancialTransaction[]
+  dateBlocks   DateBlock[]
+
+  @@map("properties")
+}
+
+model DateBlock {
+  id         String   @id @default(cuid())
+  propertyId String
+  startDate  DateTime
+  endDate    DateTime
+  reason     String   @default("Bloqueio")
+  type       String   @default("MANUAL") // MANUAL | MAINTENANCE | OWNER_USE | ICAL
+  source     String?  // "airbnb", "booking.com", etc. (when type = ICAL)
+  createdAt  DateTime @default(now())
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@map("date_blocks")
+}
+
+model Reservation {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  propertyId  String
+  guestName   String
+  guestEmail  String?
+  guestPhone  String?
+  guestCount  Int      @default(1)
+  checkIn     DateTime
+  checkOut    DateTime
+  nights      Int
+  totalAmount Float
+  cleaningFee Float    @default(0)
+  commission  Float    @default(0)
+  ownerAmount Float    @default(0)
+  status          String    @default("CONFIRMED")
+  source          String    @default("DIRECT")
+  notes           String?
+  paymentStatus   String    @default("PENDING")
+  paymentMethod   String?
+  mpPreferenceId  String?
+  mpPaymentId     String?
+  mpCheckoutUrl   String?
+  paidAt          DateTime?
+  createdById     String?
+  // Check-in online
+  checkInCompleted   Boolean   @default(false)
+  checkInCompletedAt DateTime?
+  // Contract
+  contractUrl        String?
+  // WhatsApp automation tracking
+  waMsgBooking       Boolean   @default(false)
+  waMsgReminder      Boolean   @default(false)
+  waMsgCheckout      Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt   DateTime @updatedAt
+
+  property     Property               @relation(fields: [propertyId], references: [id])
+  createdBy    User?                  @relation("CreatedBy", fields: [createdById], references: [id])
+  cleaning     Cleaning?
+  transactions FinancialTransaction[]
+  guests       Guest[]
+
+  @@map("reservations")
+}
+
+model Guest {
+  id            String   @id @default(cuid())
+  reservationId String
+  name          String
+  birthDate     DateTime
+  docType       String   @default("CPF")
+  docNumber     String
+  createdAt     DateTime @default(now())
+
+  reservation Reservation @relation(fields: [reservationId], references: [id])
+
+  @@map("guests")
+}
+
+model Cleaner {
+  id        String   @id @default(cuid())
+  userId    String?  @unique
+  name      String
+  phone     String
+  email     String?
+  region    String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User?      @relation(fields: [userId], references: [id])
+  cleanings Cleaning[]
+
+  @@map("cleaners")
+}
+
+model Cleaning {
+  id            String    @id @default(cuid())
+  propertyId    String
+  reservationId String?   @unique
+  cleanerId     String?
+  scheduledDate DateTime
+  checkoutTime  DateTime?
+  deadline      DateTime?
+  startedAt     DateTime?
+  completedAt   DateTime?
+  status        String    @default("PENDING")
+  notes         String?
+  photos        String    @default("[]")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  property    Property     @relation(fields: [propertyId], references: [id])
+  reservation Reservation? @relation(fields: [reservationId], references: [id])
+  cleaner     Cleaner?     @relation(fields: [cleanerId], references: [id])
+
+  @@map("cleanings")
+}
+
+model FinancialTransaction {
+  id            String    @id @default(cuid())
+  reservationId String?
+  propertyId    String?
+  type          String
+  category      String
+  description   String
+  amount        Float
+  dueDate       DateTime?
+  paidAt        DateTime?
+  isPaid        Boolean   @default(false)
+  createdById   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  reservation Reservation? @relation(fields: [reservationId], references: [id])
+  property    Property?    @relation(fields: [propertyId], references: [id])
+  createdBy   User?        @relation("CreatedBy", fields: [createdById], references: [id])
+
+  @@map("financial_transactions")
+}
+
+model Item {
+  id          String   @id @default(cuid())
+  name        String
+  category    String
+  description String?
+  unit        String   @default("un")
+  icon        String   @default("📦")
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  propertyItems PropertyItem[]
+
+  @@map("items")
+}
+
+model Room {
+  id         String   @id @default(cuid())
+  propertyId String
+  name       String
+  type       String
+  floor      Int      @default(1)
+  order      Int      @default(0)
+  notes      String?
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  property      Property      @relation(fields: [propertyId], references: [id])
+  propertyItems PropertyItem[]
+
+  @@map("rooms")
+}
+
+model PropertyItem {
+  id         String   @id @default(cuid())
+  propertyId String
+  itemId     String
+  roomId     String?
+  quantity   Int      @default(1)
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  property Property  @relation(fields: [propertyId], references: [id])
+  item     Item      @relation(fields: [itemId], references: [id])
+  room     Room?     @relation(fields: [roomId], references: [id])
+
+  @@unique([propertyId, itemId, roomId])
+  @@map("property_items")
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  type      String
+  title     String
+  message   String
+  data      String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@map("notifications")
+}
+
+model Setting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("settings")
+}
+
+model PricingRule {
+  id         String    @id @default(cuid())
+  propertyId String
+  name       String
+  type       String    // "WEEKEND" | "SEASON" | "HOLIDAY" | "CUSTOM" | "PACKAGE" | "HOLIDAY_BASE"
+  daysOfWeek String?   // JSON array: [5,6] = Fri+Sat (0=Sun)
+  startDate  DateTime?
+  endDate    DateTime?
+  priceType  String    @default("MULTIPLIER") // "MULTIPLIER" | "FIXED"
+  value      Float     // 1.5 = +50%, or fixed price per night
+  priority   Int       @default(0)
+  minNights  Int       @default(1)  // estadia mínima para este período (ex: 5 no pacote Natal)
+  active     Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@map("pricing_rules")
+}
