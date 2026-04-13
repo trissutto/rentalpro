@@ -7,8 +7,8 @@
 set -e
 
 # ── Configurações — edite antes de rodar ────────────────────────────
-DOMAIN="SEU_DOMINIO_AQUI"          # ex: rentalpro.com.br
-REPO_URL="SEU_REPO_GITHUB_AQUI"    # ex: https://github.com/usuario/rental-system.git
+DOMAIN="reservasita.com.br"
+REPO_URL="https://github.com/trissutto/rentalpro.git"
 APP_DIR="/var/www/rentalpro"
 NODE_VERSION="20"
 # ────────────────────────────────────────────────────────────────────
@@ -54,7 +54,7 @@ echo "▶ [7/9] Configurando variáveis de ambiente..."
 cat > $APP_DIR/.env << EOF
 DATABASE_URL="file:./prisma/prod.db"
 NEXTAUTH_SECRET="$(openssl rand -base64 32)"
-NEXTAUTH_URL="https://$DOMAIN"
+NEXTAUTH_URL="https://reservasita.com.br"
 JWT_SECRET="$(openssl rand -base64 32)"
 CRON_SECRET="$(openssl rand -base64 16)"
 NODE_ENV="production"
