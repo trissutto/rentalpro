@@ -13,7 +13,7 @@ import { useAuthStore } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { href: "/", icon: LayoutDashboard, label: "Início" },
+  { href: "/home", icon: LayoutDashboard, label: "Início" },
   { href: "/calendar", icon: Calendar, label: "Calendário" },
   { href: "/cleaning", icon: Sparkles, label: "Limpeza" },
   { href: "/properties", icon: Home, label: "Imóveis" },
@@ -52,7 +52,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const visibleNav = navItems.filter((item) => {
     if (isOwner && item.href === "/cleaning") return false;
-    if (isOwner && item.href === "/") return true;
+    if (isOwner && item.href === "/home") return true;
     return true;
   });
 
