@@ -302,7 +302,7 @@ export default function UsersPage() {
   const [editingUser, setEditingUser] = useState<UserItem | undefined>();
 
   useEffect(() => {
-    if (me && me.role !== "ADMIN") { router.push("/home"); return; }
+    if (me && me.role !== "ADMIN") { router.push("/"); return; }
     loadUsers();
   }, []);
 

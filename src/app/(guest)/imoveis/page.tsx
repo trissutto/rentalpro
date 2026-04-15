@@ -96,46 +96,8 @@ const HERO_SLIDES = [
   "/hero-6.jpg",
 ];
 
-interface Promotion {
-  id: string;
-  title: string;
-  subtitle?: string;
-  description?: string;
-  emoji: string;
-  bgGradient: string;
-  textColor: string;
-  ctaText: string;
-  ctaUrl: string;
-  imageUrl?: string | null;
-  showAsPopup?: boolean;
-  startDate?: string;
-  endDate?: string;
-  active: boolean;
-  order: number;
-}
-
-// Mapa fixo para evitar purge do Tailwind em classes dinâmicas
-const GRADIENT_CSS: Record<string, string> = {
-  "from-teal-500 to-cyan-600":     "linear-gradient(135deg, #14b8a6, #0891b2)",
-  "from-purple-500 to-pink-600":   "linear-gradient(135deg, #a855f7, #db2777)",
-  "from-orange-400 to-red-500":    "linear-gradient(135deg, #fb923c, #ef4444)",
-  "from-blue-500 to-indigo-600":   "linear-gradient(135deg, #3b82f6, #4f46e5)",
-  "from-green-500 to-emerald-600": "linear-gradient(135deg, #22c55e, #059669)",
-  "from-yellow-400 to-orange-500": "linear-gradient(135deg, #facc15, #f97316)",
-  "from-pink-500 to-fuchsia-600":  "linear-gradient(135deg, #ec4899, #c026d3)",
-  "from-slate-600 to-gray-700":    "linear-gradient(135deg, #475569, #374151)",
-  "from-amber-500 to-brown-600":   "linear-gradient(135deg, #f59e0b, #92400e)",
-  "from-violet-500 to-purple-600": "linear-gradient(135deg, #8b5cf6, #9333ea)",
-};
-function getGradientCSS(key: string) {
-  return GRADIENT_CSS[key] ?? "linear-gradient(135deg, #14b8a6, #0891b2)";
-}
-
 export default function PropertiesPublicPage() {
   const [properties, setProperties] = useState<Property[]>([]);
-  const [promotions, setPromotions] = useState<Promotion[]>([]);
-  // Apenas promoções que NÃO são popup (banners da página)
-  const bannerPromos = promotions.filter((p) => !p.showAsPopup);
   const [loading, setLoading] = useState(true);
   const [checkIn, setCheckIn] = useState("");
   const [checkOut, setCheckOut] = useState("");
@@ -162,12 +124,7 @@ export default function PropertiesPublicPage() {
   }, [nextSlide]);
 
   useEffect(() => {
-    window.scrollTo({ top: 0, behavior: "instant" });
     loadProperties();
-    fetch("/api/public/promotions")
-      .then(r => r.json())
-      .then(d => setPromotions(d.promotions ?? []))
-      .catch(() => {});
   }, []);
 
   async function loadProperties(filters?: { checkIn?: string; checkOut?: string; minGuests?: number | null; maxGuests?: number | null }) {
@@ -301,7 +258,7 @@ export default function PropertiesPublicPage() {
     : null;
 
   return (
-    <div>
+    <div className="-mx-4 -mt-6">
 
       {/* ── HERO: DESTINATION FIRST ────────────────────────────────────── */}
       {/* Foto ocupa 100vh. Sem texto no centro. Só logo + bolinhas + setas. */}
@@ -491,72 +448,6 @@ export default function PropertiesPublicPage() {
           </div>
         )}
       </section>
-
-      {/* ── BANNERS DE PROMOÇÃO — só os que NÃO são popup ── */}
-      {bannerPromos.length > 0 && !searched && (
-        <section className="max-w-5xl mx-auto px-4 mb-8">
-          <div className={`grid gap-4 ${bannerPromos.slice(0,4).length === 1 ? "grid-cols-1" : "grid-cols-1 md:grid-cols-2"}`}>
-            {bannerPromos.slice(0, 4).map((promo, idx) =>
-              promo.imageUrl ? (
-                /* ── Banner COM imagem: adapta ao tamanho natural ── */
-                <motion.a
-                  key={promo.id}
-                  href={promo.ctaUrl}
-                  initial={{ opacity: 0, y: 16 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: idx * 0.08 }}
-                  className="relative overflow-hidden rounded-3xl block hover:scale-[1.02] transition-transform cursor-pointer shadow-lg"
-                >
-                  <img
-                    src={promo.imageUrl}
-                    alt={promo.title}
-                    className="block w-full h-auto object-contain"
-                  />
-                  {/* Barra inferior com CTA */}
-                  <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent p-5 flex items-end justify-between gap-3">
-                    <div className="text-white min-w-0">
-                      <p className="font-bold text-base drop-shadow truncate">{promo.title}</p>
-                      {promo.subtitle && (
-                        <p className="text-white/80 text-sm drop-shadow truncate">{promo.subtitle}</p>
-                      )}
-                    </div>
-                    <span className="flex-shrink-0 bg-white text-slate-900 font-bold text-sm px-4 py-2 rounded-xl shadow whitespace-nowrap">
-                      {promo.ctaText} →
-                    </span>
-                  </div>
-                </motion.a>
-              ) : (
-                /* ── Banner SEM imagem: gradiente com conteúdo ── */
-                <motion.a
-                  key={promo.id}
-                  href={promo.ctaUrl}
-                  initial={{ opacity: 0, y: 16 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: idx * 0.08 }}
-                  className="relative overflow-hidden rounded-3xl p-7 block hover:scale-[1.02] transition-transform cursor-pointer shadow-lg min-h-[180px]"
-                  style={{ background: getGradientCSS(promo.bgGradient) }}
-                >
-                  <div className="absolute -right-8 -top-8 w-40 h-40 bg-white/10 rounded-full pointer-events-none" />
-                  <div className="absolute right-4 bottom-0 w-20 h-20 bg-white/10 rounded-full pointer-events-none" />
-                  <div className="relative z-10">
-                    <span className="text-4xl mb-3 block">{promo.emoji}</span>
-                    <h3 className="text-2xl font-black mb-1 text-white drop-shadow-lg">{promo.title}</h3>
-                    {promo.subtitle && (
-                      <p className="text-white/90 text-sm font-medium mb-4 drop-shadow">{promo.subtitle}</p>
-                    )}
-                    {promo.description && (
-                      <p className="text-white/80 text-xs mb-4 drop-shadow">{promo.description}</p>
-                    )}
-                    <span className="inline-flex items-center gap-2 bg-white/20 hover:bg-white/30 backdrop-blur text-white font-bold text-sm px-4 py-2 rounded-xl transition-colors border border-white/30">
-                      {promo.ctaText} →
-                    </span>
-                  </div>
-                </motion.a>
-              )
-            )}
-          </div>
-        </section>
-      )}
 
       {/* ── IMÓVEIS ───────────────────────────────────────────────────── */}
       <section id="imoveis-section" className="max-w-5xl mx-auto px-4 mb-20">

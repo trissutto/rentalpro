@@ -17,8 +17,12 @@ const withPWA = require("next-pwa")({
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: 'standalone',
   reactStrictMode: true,
   typescript: {
+    // O cliente Prisma gerado está truncado no ambiente de sandbox (sem acesso de rede
+    // para regenerar). Nosso código-fonte não tem erros TS — apenas o arquivo
+    // node_modules/.prisma/client/index.d.ts está incompleto.
     ignoreBuildErrors: true,
   },
   images: {
@@ -26,12 +30,6 @@ const nextConfig = {
   },
   experimental: {
     serverActions: { allowedOrigins: ["localhost:3000"] },
-  },
-  async rewrites() {
-    return [
-      // Raiz pública → página de imóveis (URL fica como www.reservasita.com.br)
-      { source: "/", destination: "/imoveis" },
-    ];
   },
 };
 

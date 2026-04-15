@@ -7,13 +7,13 @@ import { motion } from "framer-motion";
 import {
   LayoutDashboard, Calendar, Sparkles, Home, DollarSign,
   Users, Settings, Bell, LogOut, ChevronRight, UserCog, Package, DoorOpen, ClipboardList,
-  BarChart2, Receipt, CreditCard, Megaphone,
+  BarChart2, Receipt, CreditCard,
 } from "lucide-react";
 import { useAuthStore } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { href: "/home", icon: LayoutDashboard, label: "Início" },
+  { href: "/", icon: LayoutDashboard, label: "Início" },
   { href: "/calendar", icon: Calendar, label: "Calendário" },
   { href: "/cleaning", icon: Sparkles, label: "Limpeza" },
   { href: "/properties", icon: Home, label: "Imóveis" },
@@ -52,7 +52,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const visibleNav = navItems.filter((item) => {
     if (isOwner && item.href === "/cleaning") return false;
-    if (isOwner && item.href === "/home") return true;
+    if (isOwner && item.href === "/") return true;
     return true;
   });
 
@@ -158,23 +158,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <CreditCard size={18} className={pathname === "/payments" ? "text-brand-600" : "text-slate-400"} />
                 Parcelamentos
                 {pathname === "/payments" && <ChevronRight className="ml-auto w-4 h-4 text-brand-400" />}
-              </Link>
-              {/* Divider */}
-              <div className="pt-1 pb-0.5">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-3">Marketing</p>
-              </div>
-              <Link
-                href="/promotions"
-                className={cn(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all",
-                  pathname === "/promotions"
-                    ? "bg-brand-50 text-brand-700"
-                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                )}
-              >
-                <Megaphone size={18} className={pathname === "/promotions" ? "text-brand-600" : "text-slate-400"} />
-                Promoções
-                {pathname === "/promotions" && <ChevronRight className="ml-auto w-4 h-4 text-brand-400" />}
               </Link>
               {/* Divider */}
               <div className="pt-1 pb-0.5">

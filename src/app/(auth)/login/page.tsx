@@ -28,7 +28,7 @@ export default function LoginPage() {
       if (!res.ok) throw new Error(data.error);
       login(data.user, data.token);
       toast.success(`Bem-vindo, ${data.user.name}!`);
-      router.push("/home");
+      router.push("/");
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Erro ao entrar");
     } finally {

@@ -1,6 +1,6 @@
 /**
  * migrate-installments.js
- * Adiciona coluna installmentData à tabela reservations (se não existir)
+ * Adds installmentData, receiptUrl, receiptStatus columns to reservations (if not exist)
  */
 
 const path = require("path");
@@ -10,20 +10,26 @@ const DB_PATH = path.join(__dirname, "prisma", "dev.db");
 
 try {
   const db = new Database(DB_PATH);
-
-  // Check existing columns
   const cols = db.pragma("table_info(reservations)").map((c) => c.name);
 
-  if (!cols.includes("installmentData")) {
-    db.exec("ALTER TABLE reservations ADD COLUMN installmentData TEXT DEFAULT NULL");
-    console.log("✅ Coluna installmentData adicionada à tabela reservations");
-  } else {
-    console.log("ℹ️  Coluna installmentData já existe — nada a fazer");
+  const migrations = [
+    { col: "installmentData", sql: "ALTER TABLE reservations ADD COLUMN installmentData TEXT DEFAULT NULL" },
+    { col: "receiptUrl",      sql: "ALTER TABLE reservations ADD COLUMN receiptUrl TEXT DEFAULT NULL" },
+    { col: "receiptStatus",   sql: "ALTER TABLE reservations ADD COLUMN receiptStatus TEXT DEFAULT NULL" },
+  ];
+
+  for (const m of migrations) {
+    if (!cols.includes(m.col)) {
+      db.exec(m.sql);
+      console.log(`✅ Coluna ${m.col} adicionada`);
+    } else {
+      console.log(`ℹ️  ${m.col} já existe`);
+    }
   }
 
   db.close();
   process.exit(0);
 } catch (err) {
-  console.error("❌ Erro na migração installments:", err.message);
+  console.error("❌ Erro na migração:", err.message);
   process.exit(1);
 }

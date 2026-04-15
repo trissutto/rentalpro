@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { Home } from "lucide-react";
-import PromoPopup from "@/components/PromoPopup";
 
 export default function GuestLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -25,9 +24,7 @@ export default function GuestLayout({ children }: { children: React.ReactNode })
         </div>
       </header>
 
-      <PromoPopup />
-
-      <main className="pb-16">
+      <main className="max-w-5xl mx-auto px-4 py-6 pb-16">
         {children}
       </main>
 

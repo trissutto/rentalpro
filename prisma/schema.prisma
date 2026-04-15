@@ -1,6 +1,5 @@
 generator client {
-  provider      = "prisma-client-js"
-  binaryTargets = ["native", "debian-openssl-3.0.x", "windows"]
+  provider = "prisma-client-js"
 }
 
 datasource db {
@@ -267,28 +266,6 @@ model PropertyItem {
 
   @@unique([propertyId, itemId, roomId])
   @@map("property_items")
-}
-
-model Promotion {
-  id          String    @id @default(cuid())
-  title       String
-  subtitle    String?
-  description String?
-  emoji       String    @default("🎉")
-  bgGradient  String    @default("from-teal-500 to-cyan-600")
-  textColor   String    @default("white")
-  ctaText     String    @default("Ver imóveis")
-  ctaUrl      String    @default("/imoveis")
-  imageUrl    String?
-  showAsPopup Boolean   @default(false)
-  startDate   DateTime?
-  endDate     DateTime?
-  active      Boolean   @default(true)
-  order       Int       @default(0)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-
-  @@map("promotions")
 }
 
 model Notification {
