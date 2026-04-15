@@ -89,10 +89,18 @@ export default function SettingsPage() {
     try {
       const fd = new FormData();
       fd.append("file", file);
-      const res = await apiRequest("/api/admin/hero-images", { method: "POST", body: fd });
-      const d   = await res.json();
-      if (d.urls) setHeroUrls(d.urls);
+      const token = localStorage.getItem("token");
+      const res = await fetch("/api/admin/hero-images", {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: fd,
+      });
+      let d: { urls?: string[]; error?: string } = {};
+      try { d = await res.json(); } catch { d = { error: `Erro ${res.status}` }; }
+      if (d.urls) { setHeroUrls(d.urls); toast.success("Foto adicionada!"); }
       else toast.error(d.error || "Erro ao subir imagem");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Erro ao enviar foto");
     } finally {
       setHeroUploading(false);
     }
@@ -121,11 +129,27 @@ export default function SettingsPage() {
       const fd = new FormData();
       fd.append("file", file);
       fd.append("slot", slot);
-      const res = await apiRequest("/api/admin/home-banners", { method: "PUT", body: fd });
-      const d   = await res.json();
-      if (d.url) setBanner(prev => ({ ...prev, imageUrl: d.url }));
-      else toast.error(d.error || "Erro no upload");
-    } finally { setUploading(false); }
+      // NÃO usar apiRequest — ele força Content-Type: application/json
+      // que quebra o multipart/form-data. Usar fetch diretamente.
+      const token = localStorage.getItem("token");
+      const res = await fetch("/api/admin/home-banners", {
+        method: "PUT",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: fd,
+      });
+      let d: { url?: string; error?: string } = {};
+      try { d = await res.json(); } catch { d = { error: `Erro ${res.status}` }; }
+      if (d.url) {
+        setBanner(prev => ({ ...prev, imageUrl: d.url! }));
+        toast.success("Foto adicionada!");
+      } else {
+        toast.error(d.error || "Erro no upload");
+      }
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Erro ao enviar foto");
+    } finally {
+      setUploading(false);
+    }
   }
 
   async function deleteHeroImage(url: string) {
