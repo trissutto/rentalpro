@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   rentalpro:
-    image: ghcr.io/mattheuscamargo/rental:latest
+    image: ghcr.io/trissutto/rentalpro:latest
     container_name: rentalpro_app
     restart: always
     environment:
