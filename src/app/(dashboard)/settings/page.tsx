@@ -11,9 +11,9 @@ export default function SettingsPage() {
   const { user, logout } = useAuthStore();
   const router = useRouter();
 
-  // Mercado Pago settings
-  const [mpToken, setMpToken]         = useState("");
-  const [mpPublicKey, setMpPublicKey] = useState("");
+  // PagBank settings
+  const [pbToken, setPbToken]         = useState("");
+  const [pbPublicKey, setPbPublicKey] = useState("");
   const [showToken, setShowToken]     = useState(false);
   const [savingMp, setSavingMp]       = useState(false);
   const [loadingSettings, setLoadingSettings] = useState(true);
@@ -43,10 +43,9 @@ export default function SettingsPage() {
   // Credential test
   type TestResult = {
     ok: boolean;
-    tokenInfo?: { length: number; prefix: string; startsWithApp: boolean; startsWithTest: boolean; hasSpaces: boolean };
+    tokenInfo?: { length: number; prefix: string; hasSpaces: boolean };
     tests?: {
-      userFetch: { ok: boolean; data?: Record<string, unknown>; error?: string };
-      preferenceCreate: { ok: boolean; data?: Record<string, unknown>; error?: string };
+      accountFetch: { ok: boolean; data?: Record<string, unknown>; error?: string };
     };
     recommendation?: string;
     error?: string;
@@ -59,8 +58,8 @@ export default function SettingsPage() {
       .then(r => r.json())
       .then(d => {
         if (d.settings) {
-          setMpToken(d.settings.mp_access_token || "");
-          setMpPublicKey(d.settings.mp_public_key || "");
+          setPbToken(d.settings.pagbank_token || "");
+          setPbPublicKey(d.settings.pagbank_public_key || "");
           setSmtpHost(d.settings.smtp_host || "");
           setSmtpPort(d.settings.smtp_port || "465");
           setSmtpUser(d.settings.smtp_user || "");
@@ -143,16 +142,16 @@ export default function SettingsPage() {
     setSavingMp(true);
     try {
       await Promise.all([
-        mpToken && apiRequest("/api/settings", {
+        pbToken && apiRequest("/api/settings", {
           method: "POST",
-          body: JSON.stringify({ key: "mp_access_token", value: mpToken }),
+          body: JSON.stringify({ key: "pagbank_token", value: pbToken }),
         }),
-        mpPublicKey && apiRequest("/api/settings", {
+        pbPublicKey && apiRequest("/api/settings", {
           method: "POST",
-          body: JSON.stringify({ key: "mp_public_key", value: mpPublicKey }),
+          body: JSON.stringify({ key: "pagbank_public_key", value: pbPublicKey }),
         }),
       ]);
-      toast.success("Configurações do Mercado Pago salvas!");
+      toast.success("Configurações do PagBank salvas!");
     } catch {
       toast.error("Erro ao salvar configurações");
     } finally {
@@ -234,17 +233,17 @@ export default function SettingsPage() {
         </div>
       </motion.div>
 
-      {/* Mercado Pago */}
+      {/* PagBank */}
       {isAdmin && (
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
           className="card mb-4">
           <div className="flex items-center gap-2.5 mb-4">
-            <div className="w-9 h-9 bg-blue-50 rounded-xl flex items-center justify-center">
-              <CreditCard size={16} className="text-blue-600" />
+            <div className="w-9 h-9 bg-yellow-50 rounded-xl flex items-center justify-center">
+              <CreditCard size={16} className="text-yellow-600" />
             </div>
             <div>
-              <p className="font-bold text-slate-900 text-sm">Mercado Pago</p>
-              <p className="text-xs text-slate-400">PIX, cartão de crédito e parcelamento</p>
+              <p className="font-bold text-slate-900 text-sm">PagBank</p>
+              <p className="text-xs text-slate-400">PIX e cartão de crédito</p>
             </div>
           </div>
 
@@ -256,15 +255,15 @@ export default function SettingsPage() {
             <form onSubmit={saveMpSettings} className="space-y-3">
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-                  Access Token (APP_USR-...)
-                  <span className="ml-1.5 font-normal text-slate-400">Encontre em: MP → Suas Aplicações → Credenciais</span>
+                  Token de Integração
+                  <span className="ml-1.5 font-normal text-slate-400">PagBank → Conta → Integrações → Token</span>
                 </label>
                 <div className="relative">
                   <input
                     type={showToken ? "text" : "password"}
-                    value={mpToken}
-                    onChange={e => setMpToken(e.target.value)}
-                    placeholder="APP_USR-0000000000000000-000000-..."
+                    value={pbToken}
+                    onChange={e => setPbToken(e.target.value)}
+                    placeholder="Token de integração PagBank..."
                     className="input-base pr-10 font-mono text-xs"
                   />
                   <button type="button" onClick={() => setShowToken(v => !v)}
@@ -276,26 +275,26 @@ export default function SettingsPage() {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-                  Public Key (APP_USR-...)
-                  <span className="ml-1.5 font-normal text-slate-400">Para exibir o checkout no site</span>
+                  Chave Pública (para criptografia de cartão)
+                  <span className="ml-1.5 font-normal text-slate-400">PagBank → Conta → Integrações → Chave Pública</span>
                 </label>
                 <input
                   type="text"
-                  value={mpPublicKey}
-                  onChange={e => setMpPublicKey(e.target.value)}
-                  placeholder="APP_USR-00000000-0000-0000-0000-000000000000"
+                  value={pbPublicKey}
+                  onChange={e => setPbPublicKey(e.target.value)}
+                  placeholder="PUBKEY-..."
                   className="input-base font-mono text-xs"
                 />
               </div>
 
               <div className="flex items-center justify-between pt-1">
                 <a
-                  href="https://www.mercadopago.com.br/developers/panel/app"
+                  href="https://minha.conta.pagseguro.uol.com.br/configuracoes/acesso-a-api"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-xs text-brand-600 hover:underline"
                 >
-                  Acessar painel de credenciais →
+                  Acessar painel PagBank →
                 </a>
                 <button type="submit" disabled={savingMp}
                   className="flex items-center gap-1.5 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold rounded-xl transition disabled:opacity-60">
@@ -308,12 +307,12 @@ export default function SettingsPage() {
 
           {/* Webhook info */}
           <div className="mt-4 pt-4 border-t border-slate-100">
-            <p className="text-xs font-semibold text-slate-500 mb-1.5">URL do Webhook (configure no painel MP)</p>
+            <p className="text-xs font-semibold text-slate-500 mb-1.5">URL do Webhook (configure no painel PagBank)</p>
             <div className="bg-slate-50 rounded-xl px-3 py-2.5 font-mono text-xs text-slate-600 break-all select-all">
-              {typeof window !== "undefined" ? window.location.origin : "https://seudominio.com"}/api/webhooks/mercadopago
+              {typeof window !== "undefined" ? window.location.origin : "https://seudominio.com"}/api/webhooks/pagbank
             </div>
             <p className="text-xs text-slate-400 mt-1.5">
-              No painel MP → Suas Aplicações → Webhooks → adicione esta URL com o evento <strong>Pagamentos</strong>
+              No painel PagBank → Minha Conta → Integrações → Notificações → adicione esta URL
             </p>
           </div>
 
@@ -328,56 +327,43 @@ export default function SettingsPage() {
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition disabled:opacity-60"
               >
                 {testingMp ? <Loader2 size={12} className="animate-spin" /> : <FlaskConical size={12} />}
-                {testingMp ? "Testando..." : "Testar credenciais"}
+                {testingMp ? "Testando..." : "Testar token"}
               </button>
             </div>
 
             {testResult && (
               <div className={`rounded-xl p-3 text-xs space-y-2 ${testResult.ok ? "bg-green-50 border border-green-200" : "bg-red-50 border border-red-200"}`}>
-                {/* Overall result */}
                 <div className="flex items-center gap-2 font-semibold">
                   {testResult.ok
                     ? <CheckCircle2 size={14} className="text-green-600 flex-shrink-0" />
                     : <XCircle size={14} className="text-red-500 flex-shrink-0" />}
                   <span className={testResult.ok ? "text-green-800" : "text-red-700"}>
-                    {testResult.ok ? "Credenciais válidas" : "Problema encontrado"}
+                    {testResult.ok ? "Token válido" : "Problema encontrado"}
                   </span>
                 </div>
 
-                {/* Token info */}
                 {testResult.tokenInfo && (
                   <div className="text-slate-600 space-y-0.5 pl-5">
                     <p>Token: <code className="font-mono">{testResult.tokenInfo.prefix}</code> ({testResult.tokenInfo.length} chars)</p>
                     {testResult.tokenInfo.hasSpaces && (
                       <p className="text-amber-600 flex items-center gap-1">
-                        <AlertTriangle size={11} /> Token continha espaços extras (foram removidos automaticamente)
+                        <AlertTriangle size={11} /> Token continha espaços extras (removidos automaticamente)
                       </p>
                     )}
-                    {!testResult.tokenInfo.startsWithApp && !testResult.tokenInfo.startsWithTest && (
-                      <p className="text-red-600">⚠️ Token não começa com APP_USR- nem TEST- — verifique se copiou corretamente</p>
-                    )}
                   </div>
                 )}
 
-                {/* Test results */}
                 {testResult.tests && (
                   <div className="pl-5 space-y-1 text-slate-600">
-                    <p className={testResult.tests.userFetch.ok ? "text-green-700" : "text-red-600"}>
-                      {testResult.tests.userFetch.ok ? "✓" : "✗"} Validar token:
-                      {testResult.tests.userFetch.ok && testResult.tests.userFetch.data
-                        ? ` conta ${(testResult.tests.userFetch.data as { email?: string }).email || (testResult.tests.userFetch.data as { nickname?: string }).nickname}`
-                        : ` ${testResult.tests.userFetch.error}`}
-                    </p>
-                    <p className={testResult.tests.preferenceCreate.ok ? "text-green-700" : "text-red-600"}>
-                      {testResult.tests.preferenceCreate.ok ? "✓" : "✗"} Criar preferência de pagamento:
-                      {testResult.tests.preferenceCreate.ok
-                        ? " OK"
-                        : ` ${testResult.tests.preferenceCreate.error}`}
+                    <p className={testResult.tests.accountFetch.ok ? "text-green-700" : "text-red-600"}>
+                      {testResult.tests.accountFetch.ok ? "✓" : "✗"} Validar token:
+                      {testResult.tests.accountFetch.ok && testResult.tests.accountFetch.data
+                        ? ` conta ${(testResult.tests.accountFetch.data as { email?: string }).email || (testResult.tests.accountFetch.data as { name?: string }).name}`
+                        : ` ${testResult.tests.accountFetch.error}`}
                     </p>
                   </div>
                 )}
 
-                {/* Recommendation */}
                 {testResult.recommendation && (
                   <p className={`pl-5 font-medium ${testResult.ok ? "text-green-700" : "text-red-700"}`}>
                     {testResult.recommendation}
