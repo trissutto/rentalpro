@@ -2,19 +2,20 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import type { InstallmentPlan } from "../installment-plan/route";
 
+const PB_API = "https://api.pagseguro.com";
+
 /**
  * POST /api/public/payments/pay-installment
- * Body: { code: string, seq: number, formData: MP brick formData }
- *
- * Processes payment for a specific installment (seq 1 = entry, 2..n = monthly).
+ * Body (PIX):  { code, seq, method: "pix" }
+ * Body (Card): { code, seq, method: "card", encryptedCard, holderName, holderCpf }
  */
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { code, seq, formData } = body;
+    const { code, seq, method, encryptedCard, holderName, holderCpf } = body;
 
-    if (!code || !seq || !formData) {
-      return NextResponse.json({ error: "code, seq e formData são obrigatórios" }, { status: 400 });
+    if (!code || !seq || !method) {
+      return NextResponse.json({ error: "code, seq e method são obrigatórios" }, { status: 400 });
     }
 
     // Load reservation
@@ -27,7 +28,6 @@ export async function POST(req: NextRequest) {
     if (!rows.length) return NextResponse.json({ error: "Reserva não encontrada" }, { status: 404 });
     const r = rows[0];
 
-    // Load property name
     const propRows: any[] = await (prisma as any).$queryRawUnsafe(
       `SELECT name FROM properties WHERE id = ?`, r.propertyId
     );
@@ -42,54 +42,82 @@ export async function POST(req: NextRequest) {
     if (!item) return NextResponse.json({ error: "Parcela não encontrada" }, { status: 404 });
     if (item.paid) return NextResponse.json({ error: "Esta parcela já foi paga" }, { status: 409 });
 
-    // Get MP token
-    const tokenSetting = await prisma.setting.findUnique({ where: { key: "mp_access_token" } });
+    // Get PagBank token
+    const tokenSetting = await prisma.setting.findUnique({ where: { key: "pagbank_token" } });
     if (!tokenSetting?.value) {
       return NextResponse.json({ error: "Gateway de pagamento não configurado" }, { status: 400 });
     }
+    const token = tokenSetting.value.trim();
 
-    const accessToken = tokenSetting.value.trim();
     const reqUrl = new URL(req.url);
     const isLocalhost = reqUrl.hostname === "localhost" || reqUrl.hostname === "127.0.0.1";
     const origin = process.env.NEXT_PUBLIC_BASE_URL || `${reqUrl.protocol}//${reqUrl.host}`;
 
-    const paymentPayload = {
-      ...formData,
-      transaction_amount: item.amount,
-      description: `${item.label} — Reserva ${r.code} (${propertyName})`,
-      external_reference: `${r.code}-parcela-${seq}`,
-      ...(isLocalhost ? {} : { notification_url: `${origin}/api/webhooks/mercadopago` }),
-    };
-
+    const amountCents = Math.round(item.amount * 100);
+    const referenceId = `${r.code}-parcela-${seq}`;
     const idempotencyKey = `${r.code}-inst-${seq}-${Date.now()}`;
 
-    const mpRes = await fetch("https://api.mercadopago.com/v1/payments", {
+    let payload: Record<string, unknown>;
+
+    if (method === "pix") {
+      payload = {
+        reference_id: referenceId,
+        description: `${item.label} — Reserva ${r.code} (${propertyName})`,
+        amount: { value: amountCents, currency: "BRL" },
+        payment_method: { type: "PIX", installments: 1, capture: true },
+        ...(isLocalhost ? {} : { notification_urls: [`${origin}/api/webhooks/pagbank`] }),
+      };
+    } else if (method === "card") {
+      if (!encryptedCard || !holderName || !holderCpf) {
+        return NextResponse.json({ error: "Dados do cartão obrigatórios" }, { status: 400 });
+      }
+      payload = {
+        reference_id: referenceId,
+        description: `${item.label} — Reserva ${r.code} (${propertyName})`,
+        amount: { value: amountCents, currency: "BRL" },
+        payment_method: {
+          type: "CREDIT_CARD",
+          installments: 1,
+          capture: true,
+          card: { encrypted: encryptedCard, store: false },
+          holder: { name: holderName, tax_id: holderCpf.replace(/\D/g, "") },
+        },
+        ...(isLocalhost ? {} : { notification_urls: [`${origin}/api/webhooks/pagbank`] }),
+      };
+    } else {
+      return NextResponse.json({ error: "Método de pagamento inválido" }, { status: 400 });
+    }
+
+    const pbRes = await fetch(`${PB_API}/charges`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
-        "X-Idempotency-Key": idempotencyKey,
+        "Authorization": `Bearer ${token}`,
+        "x-idempotency-key": idempotencyKey,
       },
-      body: JSON.stringify(paymentPayload),
+      body: JSON.stringify(payload),
     });
 
-    const payment = await mpRes.json();
-    if (!mpRes.ok) {
-      return NextResponse.json(
-        { error: payment.message || "Erro ao processar pagamento" },
-        { status: mpRes.status }
-      );
+    const charge = await pbRes.json();
+    if (!pbRes.ok) {
+      const msg = charge.error_messages?.[0]?.description
+        || charge.description
+        || "Erro ao processar pagamento";
+      return NextResponse.json({ error: msg }, { status: pbRes.status });
     }
 
-    const approved = payment.status === "approved";
+    const pbStatus = charge.status as string;
+    const approvedStatuses = ["PAID", "AVAILABLE", "AUTHORIZED"];
+    const approved = approvedStatuses.includes(pbStatus);
+
+    // For PIX: return QR code data to show in UI
+    const qrCode = charge.payment_method?.qr_codes?.[0];
 
     if (approved) {
-      // Mark installment as paid
       item.paid = true;
       item.paidAt = new Date().toISOString();
-      item.mpPaymentId = String(payment.id);
+      item.mpPaymentId = charge.id;
 
-      // Check if ALL installments are paid
       const allPaid = plan.items.every(i => i.paid);
 
       await (prisma as any).$executeRawUnsafe(
@@ -100,12 +128,11 @@ export async function POST(req: NextRequest) {
          WHERE id = ?`,
         JSON.stringify(plan),
         allPaid ? "PAID" : "PARTIAL",
-        `Parcelado (${plan.numInstallments}x)`,
+        method === "pix" ? "PIX Parcelado" : `Cartão Parcelado`,
         allPaid ? new Date().toISOString() : null,
         r.id
       );
 
-      // Create financial transaction for this installment
       await prisma.financialTransaction.create({
         data: {
           reservationId: r.id,
@@ -119,7 +146,6 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      // If all paid, confirm reservation
       if (allPaid) {
         await prisma.reservation.update({
           where: { id: r.id },
@@ -128,8 +154,15 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Return MP response (for PIX QR code if needed)
-    return NextResponse.json({ ...payment, installmentPaid: approved });
+    return NextResponse.json({
+      chargeId: charge.id,
+      status: charge.status,
+      installmentPaid: approved,
+      // PIX data
+      pixText: qrCode?.text ?? null,
+      pixImageLink: qrCode?.links?.find((l: any) => l.media === "image/png")?.href ?? null,
+      pixExpiresAt: qrCode?.expiration_date ?? null,
+    });
   } catch (e) {
     console.error("pay-installment error:", e);
     return NextResponse.json({ error: "Erro interno" }, { status: 500 });
