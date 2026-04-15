@@ -8,7 +8,7 @@ services:
     environment:
       # Essas variávies podem ser sobrescritas no Portainer
       - NODE_ENV=production
-      - DATABASE_URL=file:/app/data/dev.db
+      - DATABASE_URL=file:/app/prisma/dev.db
       - JWT_SECRET=rentalpro-chave-secreta-2024 # Mude esta chave!
       - NEXTAUTH_SECRET=rentalpro-nextauth-secret # Mude esta chave!
       - NEXTAUTH_URL=https://reservasita.com.br
@@ -16,7 +16,7 @@ services:
       # Força o Prisma a usar o binário correto para Alpine Linux
       - PRISMA_QUERY_ENGINE_LIBRARY=/app/node_modules/.prisma/client/libquery_engine-linux-musl-openssl-3.0.x.so.node
     volumes:
-      - rental_data:/app/data
+      - rental_data:/app/prisma
     networks:
       - Lurds
     deploy:
