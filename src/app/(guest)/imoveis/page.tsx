@@ -24,7 +24,7 @@ interface Property {
   coverPhoto?: string | null;
 }
 
-const HERO_IMAGES = [
+const DEFAULT_HERO_IMAGES = [
   "/hero-1.jpg", "/hero-2.jpg", "/hero-3.jpg",
   "/hero-4.jpg", "/hero-5.jpg", "/hero-6.jpg",
 ];
@@ -32,7 +32,8 @@ const HERO_IMAGES = [
 export default function ImoveisPage() {
   const [properties, setProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);
-  const [heroIndex, setHeroIndex] = useState(0);
+  const [heroIndex, setHeroIndex]   = useState(0);
+  const [heroImages, setHeroImages] = useState<string[]>(DEFAULT_HERO_IMAGES);
   const [searchOpen, setSearchOpen] = useState(true);
   const [checkIn, setCheckIn] = useState("");
   const [checkOut, setCheckOut] = useState("");
@@ -46,9 +47,16 @@ export default function ImoveisPage() {
   }, []);
 
   useEffect(() => {
-    const t = setInterval(() => setHeroIndex((i) => (i + 1) % HERO_IMAGES.length), 5000);
-    return () => clearInterval(t);
+    fetch("/api/admin/hero-images")
+      .then(r => r.json())
+      .then(d => { if (d.urls?.length) setHeroImages(d.urls); })
+      .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    const t = setInterval(() => setHeroIndex((i) => (i + 1) % heroImages.length), 5000);
+    return () => clearInterval(t);
+  }, [heroImages.length]);
 
   const getPhotos = useCallback((p: Property): string[] => {
     try {
@@ -78,7 +86,7 @@ export default function ImoveisPage() {
             className="absolute inset-0"
           >
             <img
-              src={HERO_IMAGES[heroIndex]}
+              src={heroImages[heroIndex]}
               alt=""
               className="w-full h-full object-cover"
               style={{ filter: "brightness(0.35)" }}

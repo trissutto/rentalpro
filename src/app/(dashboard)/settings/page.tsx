@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { User, Bell, Shield, LogOut, ChevronRight, CreditCard, Eye, EyeOff, Check, Loader2, FlaskConical, CheckCircle2, XCircle, AlertTriangle, Mail } from "lucide-react";
+import { User, Bell, Shield, LogOut, ChevronRight, CreditCard, Eye, EyeOff, Check, Loader2, FlaskConical, CheckCircle2, XCircle, AlertTriangle, Mail, ImagePlus, Trash2, Images } from "lucide-react";
 import { useAuthStore, apiRequest } from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
@@ -17,6 +17,10 @@ export default function SettingsPage() {
   const [showToken, setShowToken]     = useState(false);
   const [savingMp, setSavingMp]       = useState(false);
   const [loadingSettings, setLoadingSettings] = useState(true);
+
+  // Hero images
+  const [heroUrls, setHeroUrls]       = useState<string[]>([]);
+  const [heroUploading, setHeroUploading] = useState(false);
 
   // Email / SMTP settings
   const [smtpHost, setSmtpHost]   = useState("");
@@ -56,7 +60,36 @@ export default function SettingsPage() {
         }
       })
       .finally(() => setLoadingSettings(false));
+    // Hero images
+    fetch("/api/admin/hero-images")
+      .then(r => r.json())
+      .then(d => setHeroUrls(d.urls || []))
+      .catch(() => {});
   }, []);
+
+  async function uploadHeroImage(file: File) {
+    setHeroUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await apiRequest("/api/admin/hero-images", { method: "POST", body: fd });
+      const d   = await res.json();
+      if (d.urls) setHeroUrls(d.urls);
+      else toast.error(d.error || "Erro ao subir imagem");
+    } finally {
+      setHeroUploading(false);
+    }
+  }
+
+  async function deleteHeroImage(url: string) {
+    const res = await apiRequest("/api/admin/hero-images", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    const d = await res.json();
+    if (d.urls) { setHeroUrls(d.urls); toast.success("Imagem removida"); }
+  }
 
   async function saveMpSettings(e: React.FormEvent) {
     e.preventDefault();
@@ -427,6 +460,55 @@ export default function SettingsPage() {
           </button>
         </div>
       </motion.div>
+
+      {/* Banner Hero */}
+      <div className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-9 h-9 bg-indigo-100 rounded-xl flex items-center justify-center">
+            <Images size={18} className="text-indigo-600" />
+          </div>
+          <div>
+            <h3 className="font-bold text-slate-900 text-sm">Fotos do Banner Principal</h3>
+            <p className="text-xs text-slate-400">Imagens que aparecem no slideshow da capa do site</p>
+          </div>
+        </div>
+
+        {/* Grid de imagens */}
+        <div className="grid grid-cols-3 gap-2 mb-3">
+          {heroUrls.map((url, i) => (
+            <div key={i} className="relative group rounded-xl overflow-hidden aspect-video bg-slate-100">
+              <img src={url} alt="" className="w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                <button
+                  onClick={() => deleteHeroImage(url)}
+                  className="bg-red-500 text-white p-1.5 rounded-lg hover:bg-red-600 transition"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+              <span className="absolute top-1 left-1 bg-black/50 text-white text-[10px] px-1.5 py-0.5 rounded-md">{i + 1}</span>
+            </div>
+          ))}
+          {heroUrls.length === 0 && (
+            <div className="col-span-3 text-center py-6 text-slate-400 text-xs border-2 border-dashed border-slate-200 rounded-xl">
+              Nenhuma imagem cadastrada — usando imagens padrão
+            </div>
+          )}
+        </div>
+
+        {/* Upload */}
+        <label className={`flex items-center justify-center gap-2 w-full py-2.5 rounded-xl border-2 border-dashed border-indigo-200 text-indigo-600 text-sm font-medium cursor-pointer hover:bg-indigo-50 transition ${heroUploading ? "opacity-50 pointer-events-none" : ""}`}>
+          {heroUploading ? <Loader2 size={16} className="animate-spin" /> : <ImagePlus size={16} />}
+          {heroUploading ? "Enviando..." : "Adicionar foto ao banner"}
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) uploadHeroImage(f); e.target.value = ""; }}
+          />
+        </label>
+        <p className="text-[10px] text-slate-400 text-center mt-1.5">JPG, PNG, WEBP, AVIF · A ordem de exibição segue a ordem de upload</p>
+      </div>
 
       {/* Logout */}
       <button
