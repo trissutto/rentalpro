@@ -197,6 +197,15 @@ export default function ImoveisPage() {
         </div>
       </section>
 
+      {/* ── HOME BANNERS (acima dos imóveis) ── */}
+      {homeBanners.length > 0 && (
+        <section className="px-4 pt-10 pb-0 max-w-6xl mx-auto">
+          {homeBanners.map((b, i) => (
+            <HomeBannerBlock key={i} banner={b} />
+          ))}
+        </section>
+      )}
+
       {/* ── PROPERTIES ── */}
       <section className="py-24 px-4">
         <div className="max-w-6xl mx-auto">
@@ -269,14 +278,6 @@ export default function ImoveisPage() {
         </div>
       </section>
 
-      {/* ── HOME BANNERS ── */}
-      {homeBanners.length > 0 && (
-        <section className="px-4 pb-8 max-w-6xl mx-auto">
-          {homeBanners.map((b, i) => (
-            <HomeBannerBlock key={i} banner={b} />
-          ))}
-        </section>
-      )}
 
       {/* ── BENEFITS ── */}
       <section className="py-24 px-4" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
