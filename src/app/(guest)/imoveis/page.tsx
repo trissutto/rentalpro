@@ -33,7 +33,7 @@ export default function ImoveisPage() {
   const [properties, setProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);
   const [heroIndex, setHeroIndex] = useState(0);
-  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(true);
   const [checkIn, setCheckIn] = useState("");
   const [checkOut, setCheckOut] = useState("");
   const [guests, setGuests] = useState(2);
@@ -124,13 +124,12 @@ export default function ImoveisPage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.8 }}
-            onClick={() => setSearchOpen(!searchOpen)}
-            className="flex items-center gap-3 px-8 py-4 rounded-full font-semibold transition-all"
-            style={{ background: "#c9a84c", color: "#0a0a0a", fontSize: "0.95rem" }}
+            onClick={() => {}}
+            className="flex items-center gap-3 px-8 py-4 rounded-full font-semibold"
+            style={{ background: "#c9a84c", color: "#0a0a0a", fontSize: "0.95rem", cursor: "default" }}
           >
             <Search size={18} />
             Verificar disponibilidade
-            <ChevronDown size={16} style={{ transform: searchOpen ? "rotate(180deg)" : "none", transition: "0.3s" }} />
           </motion.button>
 
           <AnimatePresence>
