@@ -44,3 +44,42 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ icalUrls: [] });
   }
 }
+
+// ── DELETE /api/ical-sync — remove stored URL + its blocks ────────────────
+export async function DELETE(req: NextRequest) {
+  const user = await getAuthUser(req);
+  if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+
+  const body = await req.json();
+  const { propertyId, source } = body;
+  if (!propertyId || !source) {
+    return NextResponse.json({ error: "propertyId e source são obrigatórios" }, { status: 400 });
+  }
+
+  try {
+    // Remove blocks from this source
+    await (prisma as any).$executeRawUnsafe(
+      `DELETE FROM date_blocks WHERE propertyId = ? AND type = 'ICAL' AND source = ?`,
+      propertyId, source,
+    );
+
+    // Remove URL entry from property.icalUrls
+    const rows: any[] = await (prisma as any).$queryRawUnsafe(
+      `SELECT icalUrls FROM properties WHERE id = ?`, propertyId,
+    );
+    if (rows.length > 0) {
+      let urls: { url: string; label: string; source: string }[] = [];
+      try { urls = JSON.parse(rows[0].icalUrls ?? "[]"); } catch { urls = []; }
+      urls = urls.filter(u => u.source !== source);
+      await (prisma as any).$executeRawUnsafe(
+        `UPDATE properties SET icalUrls = ? WHERE id = ?`,
+        JSON.stringify(urls), propertyId,
+      );
+    }
+
+    return NextResponse.json({ ok: true });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
+}

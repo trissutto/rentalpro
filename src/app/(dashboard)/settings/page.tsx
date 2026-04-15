@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { User, Bell, Shield, LogOut, ChevronRight, CreditCard, Eye, EyeOff, Check, Loader2, FlaskConical, CheckCircle2, XCircle, AlertTriangle, Mail, ImagePlus, Trash2, Images } from "lucide-react";
+import { User, Bell, Shield, LogOut, ChevronRight, CreditCard, Eye, EyeOff, Check, Loader2, FlaskConical, CheckCircle2, XCircle, AlertTriangle, Mail, ImagePlus, Trash2, Images, Megaphone } from "lucide-react";
 import { useAuthStore, apiRequest } from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";

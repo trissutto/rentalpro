@@ -8,6 +8,7 @@ import {
   ImagePlus, ImageOff, Loader2,
 } from "lucide-react";
 import { apiRequest } from "@/hooks/useAuth";
+import toast from "react-hot-toast";
 
 interface Promotion {
   id: string;
@@ -147,7 +148,7 @@ export default function PromotionsPage() {
   }
 
   async function handleSave() {
-    if (!form.title.trim()) return alert("Título obrigatório");
+    if (!form.title.trim()) { toast.error("Título obrigatório"); return; }
     setSaving(true);
     try {
       const body = {
@@ -159,13 +160,21 @@ export default function PromotionsPage() {
         endDate: form.endDate || null,
         order: Number(form.order),
       };
+      let res: Response;
       if (editingId) {
-        await apiRequest(`/api/admin/promotions/${editingId}`, { method: "PATCH", body: JSON.stringify(body) });
+        res = await apiRequest(`/api/admin/promotions/${editingId}`, { method: "PATCH", body: JSON.stringify(body) });
       } else {
-        await apiRequest("/api/admin/promotions", { method: "POST", body: JSON.stringify(body) });
+        res = await apiRequest("/api/admin/promotions", { method: "POST", body: JSON.stringify(body) });
       }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? `Erro ${res.status}`);
+      }
+      toast.success(editingId ? "Promoção atualizada!" : "Promoção criada!");
       setShowModal(false);
       load();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Erro ao salvar promoção");
     } finally {
       setSaving(false);
     }
@@ -175,8 +184,15 @@ export default function PromotionsPage() {
     if (!confirm("Excluir esta promoção?")) return;
     setDeletingId(id);
     try {
-      await apiRequest(`/api/admin/promotions/${id}`, { method: "DELETE" });
+      const res = await apiRequest(`/api/admin/promotions/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? `Erro ${res.status}`);
+      }
+      toast.success("Promoção excluída");
       load();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Erro ao excluir");
     } finally {
       setDeletingId(null);
     }
@@ -185,11 +201,17 @@ export default function PromotionsPage() {
   async function handleToggle(p: Promotion) {
     setTogglingId(p.id);
     try {
-      await apiRequest(`/api/admin/promotions/${p.id}`, {
+      const res = await apiRequest(`/api/admin/promotions/${p.id}`, {
         method: "PATCH",
         body: JSON.stringify({ active: !p.active }),
       });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? `Erro ${res.status}`);
+      }
       load();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Erro ao alterar status");
     } finally {
       setTogglingId(null);
     }
@@ -653,9 +675,6 @@ export default function PromotionsPage() {
           </motion.div>
         )}
       </AnimatePresence>
-
-      {/* Hidden file input */}
-      <input ref={fileRef} type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
     </div>
   );
 }

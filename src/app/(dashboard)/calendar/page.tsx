@@ -170,6 +170,9 @@ export default function CalendarPage() {
   const [icalUrl, setIcalUrl]               = useState("");
   const [icalLabel, setIcalLabel]           = useState("Airbnb");
   const [syncingIcal, setSyncingIcal]       = useState(false);
+  const [savedIcalUrls, setSavedIcalUrls]   = useState<{ url: string; label: string; source: string }[]>([]);
+  const [loadingIcalUrls, setLoadingIcalUrls] = useState(false);
+  const [deletingIcalSource, setDeletingIcalSource] = useState<string | null>(null);
 
   // Compute days range based on view mode
   const { startDate, endDate, days } = (() => {
@@ -294,6 +297,20 @@ export default function CalendarPage() {
     loadCalendar();
   }
 
+  async function loadSavedIcalUrls(propertyId: string) {
+    if (!propertyId) { setSavedIcalUrls([]); return; }
+    setLoadingIcalUrls(true);
+    try {
+      const res = await apiRequest(`/api/ical-sync?propertyId=${propertyId}`);
+      const data = await res.json();
+      setSavedIcalUrls(data.icalUrls ?? []);
+    } catch {
+      setSavedIcalUrls([]);
+    } finally {
+      setLoadingIcalUrls(false);
+    }
+  }
+
   async function syncIcal() {
     if (!icalPropertyId || !icalUrl) return;
     setSyncingIcal(true);
@@ -305,13 +322,51 @@ export default function CalendarPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       toast.success(`✅ ${data.created} bloqueios importados do ${icalLabel}`);
-      setIcalModal(false);
       setIcalUrl("");
       loadCalendar();
+      loadSavedIcalUrls(icalPropertyId);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Erro ao sincronizar iCal");
     } finally {
       setSyncingIcal(false);
+    }
+  }
+
+  async function resyncIcalSource(entry: { url: string; label: string; source: string }) {
+    setSyncingIcal(true);
+    try {
+      const res = await apiRequest("/api/ical-sync", {
+        method: "POST",
+        body: JSON.stringify({ propertyId: icalPropertyId, url: entry.url, label: entry.label, source: entry.source }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast.success(`✅ ${data.created} bloqueios sincronizados do ${entry.label}`);
+      loadCalendar();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Erro ao sincronizar");
+    } finally {
+      setSyncingIcal(false);
+    }
+  }
+
+  async function deleteIcalSource(source: string) {
+    if (!confirm(`Remover integração com "${source}" e seus bloqueios?`)) return;
+    setDeletingIcalSource(source);
+    try {
+      const res = await apiRequest("/api/ical-sync", {
+        method: "DELETE",
+        body: JSON.stringify({ propertyId: icalPropertyId, source }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast.success("Integração removida");
+      loadSavedIcalUrls(icalPropertyId);
+      loadCalendar();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Erro ao remover");
+    } finally {
+      setDeletingIcalSource(null);
     }
   }
 
@@ -522,10 +577,15 @@ export default function CalendarPage() {
           </button>
 
           <button
-            onClick={() => { setIcalModal(true); setIcalPropertyId(properties[0]?.id ?? ""); }}
+            onClick={() => {
+              const firstId = properties[0]?.id ?? "";
+              setIcalModal(true);
+              setIcalPropertyId(firstId);
+              if (firstId) loadSavedIcalUrls(firstId);
+            }}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white border border-slate-200 text-slate-600 hover:border-brand-300 hover:text-brand-600 transition"
           >
-            <Link size={13} /> Importar iCal
+            <Link size={13} /> Airbnb / iCal
           </button>
         </div>
       </div>
@@ -908,7 +968,9 @@ export default function CalendarPage() {
             >
               <div className="flex items-center justify-between mb-5">
                 <div>
-                  <h3 className="text-lg font-bold text-slate-900">Importar iCal</h3>
+                  <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                    🏠 Airbnb / iCal Sync
+                  </h3>
                   <p className="text-xs text-slate-400 mt-0.5">Sincronize com Airbnb, Booking.com, VRBO e outros</p>
                 </div>
                 <button onClick={() => setIcalModal(false)} className="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center hover:bg-slate-200 transition">
@@ -922,7 +984,7 @@ export default function CalendarPage() {
                   <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">Imóvel</label>
                   <select
                     value={icalPropertyId}
-                    onChange={e => setIcalPropertyId(e.target.value)}
+                    onChange={e => { setIcalPropertyId(e.target.value); loadSavedIcalUrls(e.target.value); }}
                     className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 bg-white"
                   >
                     {properties.map(p => (
@@ -930,6 +992,44 @@ export default function CalendarPage() {
                     ))}
                   </select>
                 </div>
+
+                {/* Saved URLs list */}
+                {loadingIcalUrls ? (
+                  <div className="text-center py-2 text-xs text-slate-400">Carregando integrações...</div>
+                ) : savedIcalUrls.length > 0 ? (
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Integrações configuradas</p>
+                    <div className="space-y-2">
+                      {savedIcalUrls.map(entry => (
+                        <div key={entry.source} className="flex items-center gap-2 p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl">
+                          <span className="text-sm">{entry.label === "Airbnb" ? "🏠" : entry.label === "Booking" ? "🔵" : "📅"}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-slate-700">{entry.label}</p>
+                            <p className="text-[10px] text-slate-400 truncate">{entry.url}</p>
+                          </div>
+                          <button
+                            onClick={() => resyncIcalSource(entry)}
+                            disabled={syncingIcal}
+                            title="Re-sincronizar agora"
+                            className="w-7 h-7 flex items-center justify-center rounded-lg bg-white border border-emerald-200 text-emerald-600 hover:bg-emerald-100 transition"
+                          >
+                            <RefreshCw size={12} className={syncingIcal ? "animate-spin" : ""} />
+                          </button>
+                          <button
+                            onClick={() => deleteIcalSource(entry.source)}
+                            disabled={deletingIcalSource === entry.source}
+                            title="Remover integração"
+                            className="w-7 h-7 flex items-center justify-center rounded-lg bg-white border border-red-200 text-red-400 hover:bg-red-50 transition"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <hr className="my-3 border-slate-100" />
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Adicionar nova plataforma</p>
+                  </div>
+                ) : null}
 
                 {/* Source label */}
                 <div>
