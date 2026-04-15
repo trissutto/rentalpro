@@ -20,25 +20,28 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Token PagBank não configurado. Salve o token primeiro." }, { status: 400 });
   }
 
-  // Chama a API do PagBank para obter a chave pública
-  const pbRes = await fetch("https://api.pagseguro.com/public-keys/credit-card", {
-    method: "GET",
+  // Chama a API do PagBank para obter/criar a chave pública
+  // Endpoint correto: POST /public-keys com body { "type": "credit-card" }
+  // Se a chave já existe, retorna a mesma. Se não existe, cria uma nova.
+  const pbRes = await fetch("https://api.pagseguro.com/public-keys", {
+    method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
+    body: JSON.stringify({ type: "credit-card" }),
   });
 
   if (!pbRes.ok) {
     const body = await pbRes.text();
     return NextResponse.json(
-      { error: `PagBank retornou ${pbRes.status}: ${body.slice(0, 200)}` },
+      { error: `PagBank retornou ${pbRes.status}: ${body.slice(0, 300)}` },
       { status: 502 }
     );
   }
 
   const data = await pbRes.json();
-  // A resposta do PagBank tem o campo "public_key"
+  // A resposta tem o campo "public_key"
   const publicKey: string = data?.public_key ?? data?.publicKey ?? "";
   if (!publicKey) {
     return NextResponse.json({ error: "PagBank não retornou chave pública. Verifique o token." }, { status: 502 });
