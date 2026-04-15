@@ -301,7 +301,7 @@ export default function PropertiesPublicPage() {
     : null;
 
   return (
-    <div className="-mx-4 -mt-6">
+    <div>
 
       {/* ── HERO: DESTINATION FIRST ────────────────────────────────────── */}
       {/* Foto ocupa 100vh. Sem texto no centro. Só logo + bolinhas + setas. */}

@@ -18,6 +18,7 @@ npm install --production=false
 # Rodar migrations (seguro — usa CREATE IF NOT EXISTS)
 node migrate-minnights.js 2>/dev/null || true
 node migrate-dateblocks.js 2>/dev/null || true
+node migrate-installments.js 2>/dev/null || true
 
 # Rebuild
 npm run build
