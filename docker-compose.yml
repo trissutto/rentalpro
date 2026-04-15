@@ -12,6 +12,9 @@ services:
       - JWT_SECRET=rentalpro-chave-secreta-2024 # Mude esta chave!
       - NEXTAUTH_SECRET=rentalpro-nextauth-secret # Mude esta chave!
       - NEXTAUTH_URL=https://reservasita.com.br
+      - NEXT_PUBLIC_BASE_URL=https://reservasita.com.br
+      # Força o Prisma a usar o binário correto para Alpine Linux
+      - PRISMA_QUERY_ENGINE_LIBRARY=/app/node_modules/.prisma/client/libquery_engine-linux-musl-openssl-3.0.x.so.node
     volumes:
       - rental_data:/app/data
     networks:

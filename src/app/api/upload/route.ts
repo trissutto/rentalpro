@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
 
     for (const file of files) {
       const ext      = file.name.split(".").pop()?.toLowerCase() || "jpg";
-      const allowed  = ["jpg","jpeg","png","webp","heic","heif"];
+      const allowed  = ["jpg","jpeg","png","webp","heic","heif","avif"];
       if (!allowed.includes(ext)) continue;
 
       const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
