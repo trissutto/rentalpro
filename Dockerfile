@@ -49,19 +49,6 @@ RUN chown nextjs:nodejs .next
 # Aproveita a saida standalone
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
-
-# Criar diretorio /app/data com permissoes corretas para o volume
-RUN mkdir -p /app/data && chown nextjs:nodejs /app/data
-
-USER nextjs
-
-EXPOSE 3000
-
-ENV PORT 3000
-ENV HOSTNAME "0.0.0.0"
-
-# O banco SQLite sera persistido via volume montado em /app/data
-CMD ["node", "server.js"]
+# Copia apenas o schema (NUNCA o dev.db — banco fica no volume)
+COPY --from=builder --chown=nextjs:nodejs /app/prisma/schema.prisma ./prisma/schema.prisma
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/
