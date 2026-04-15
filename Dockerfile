@@ -20,15 +20,22 @@ ENV NODE_ENV production
 # Gerar o cliente Prisma
 RUN npx prisma generate
 
+# Inicializar o banco SQLite (necessário para produção)
+RUN npx prisma db push --skip-generate
+
 # Build da aplicação
 RUN npm run build
 
 # Etapa 3: Runner
 FROM node:20-alpine AS runner
+RUN apk add --no-cache openssl
 WORKDIR /app
 
 ENV NODE_ENV production
 ENV NEXT_TELEMETRY_DISABLED 1
+
+# Apontar para engine compatível com OpenSSL 3.x no Alpine
+ENV PRISMA_QUERY_ENGINE_LIBRARY=/app/node_modules/.prisma/client/libquery_engine-linux-musl-openssl-3.0.x.so.node
 
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
