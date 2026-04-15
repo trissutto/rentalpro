@@ -16,6 +16,7 @@ export default function SettingsPage() {
   const [pbPublicKey, setPbPublicKey] = useState("");
   const [showToken, setShowToken]     = useState(false);
   const [savingMp, setSavingMp]       = useState(false);
+  const [fetchingPubKey, setFetchingPubKey] = useState(false);
   const [loadingSettings, setLoadingSettings] = useState(true);
 
   // Hero images
@@ -159,6 +160,21 @@ export default function SettingsPage() {
     }
   }
 
+  async function fetchPagBankPublicKey() {
+    setFetchingPubKey(true);
+    try {
+      const res = await apiRequest("/api/admin/settings/pagbank-pubkey", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `Erro ${res.status}`);
+      setPbPublicKey(data.publicKey);
+      toast.success("Chave pública obtida e salva!");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Erro ao buscar chave pública");
+    } finally {
+      setFetchingPubKey(false);
+    }
+  }
+
   async function testMpCredentials() {
     setTestingMp(true);
     setTestResult(null);
@@ -276,15 +292,29 @@ export default function SettingsPage() {
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1.5">
                   Chave Pública (para criptografia de cartão)
-                  <span className="ml-1.5 font-normal text-slate-400">PagBank → Conta → Integrações → Chave Pública</span>
                 </label>
-                <input
-                  type="text"
-                  value={pbPublicKey}
-                  onChange={e => setPbPublicKey(e.target.value)}
-                  placeholder="PUBKEY-..."
-                  className="input-base font-mono text-xs"
-                />
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={pbPublicKey}
+                    onChange={e => setPbPublicKey(e.target.value)}
+                    placeholder="PUBKEY-... (clique em Buscar →)"
+                    className="input-base font-mono text-xs flex-1"
+                  />
+                  <button
+                    type="button"
+                    onClick={fetchPagBankPublicKey}
+                    disabled={fetchingPubKey || !pbToken}
+                    title={pbToken ? "Buscar chave pública automaticamente via API do PagBank" : "Salve o token primeiro"}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl transition disabled:opacity-50 whitespace-nowrap"
+                  >
+                    {fetchingPubKey ? <Loader2 size={12} className="animate-spin" /> : <FlaskConical size={12} />}
+                    Buscar
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Clique em <strong>Buscar</strong> para obter a chave automaticamente usando o token acima.
+                </p>
               </div>
 
               <div className="flex items-center justify-between pt-1">
