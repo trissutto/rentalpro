@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Home } from "lucide-react";
 import PromoPopup from "@/components/PromoPopup";
+import PromoBanner from "@/components/PromoBanner";
 
 export default function GuestLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -25,6 +26,7 @@ export default function GuestLayout({ children }: { children: React.ReactNode })
           </Link>
         </div>
       </header>
+      <PromoBanner />
 
       <main className="max-w-5xl mx-auto px-4 py-6 pb-16">
         {children}
