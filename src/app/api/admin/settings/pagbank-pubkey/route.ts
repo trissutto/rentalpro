@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ type: "credit-card" }),
+    body: JSON.stringify({ type: "card" }),
   });
 
   if (!pbRes.ok) {
