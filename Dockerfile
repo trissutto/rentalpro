@@ -54,4 +54,5 @@ ENV PORT 3000
 # set hostname to localhost
 ENV HOSTNAME "0.0.0.0"
 
-# O banco SQLite será persistido via vo
+# O banco SQLite será persistido via volume montado em /app/prisma
+CMD ["node", "server.js"]
