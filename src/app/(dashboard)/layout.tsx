@@ -7,7 +7,7 @@ import { motion } from "framer-motion";
 import {
   LayoutDashboard, Calendar, Sparkles, Home, DollarSign,
   Users, Settings, Bell, LogOut, ChevronRight, UserCog, Package, DoorOpen, ClipboardList,
-  BarChart2, Receipt, CreditCard,
+  BarChart2, Receipt, CreditCard, Megaphone,
 } from "lucide-react";
 import { useAuthStore } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
@@ -203,6 +203,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 {pathname === "/rooms" && <ChevronRight className="ml-auto w-4 h-4 text-brand-400" />}
               </Link>
             </>
+          )}
+
+          {isAdmin && (
+            <Link
+              href="/promotions"
+              className={cn(
+                "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all",
+                pathname === "/promotions"
+                  ? "bg-brand-50 text-brand-700"
+                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+              )}
+            >
+              <Megaphone size={18} className={pathname === "/promotions" ? "text-brand-600" : "text-slate-400"} />
+              Promoções
+            </Link>
           )}
 
           {isAdmin && (

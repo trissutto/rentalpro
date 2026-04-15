@@ -22,6 +22,15 @@ export default function SettingsPage() {
   const [heroUrls, setHeroUrls]       = useState<string[]>([]);
   const [heroUploading, setHeroUploading] = useState(false);
 
+  // Home banners
+  const emptyBanner = { title: "", subtitle: "", ctaText: "Ver imóveis", ctaUrl: "/imoveis", imageUrl: "", bgColor: "#1a1a2e", textColor: "#ffffff", active: false };
+  const [banner1, setBanner1] = useState({ ...emptyBanner });
+  const [banner2, setBanner2] = useState({ ...emptyBanner });
+  const [savingBanner1, setSavingBanner1] = useState(false);
+  const [savingBanner2, setSavingBanner2] = useState(false);
+  const [uploadingBanner1, setUploadingBanner1] = useState(false);
+  const [uploadingBanner2, setUploadingBanner2] = useState(false);
+
   // Email / SMTP settings
   const [smtpHost, setSmtpHost]   = useState("");
   const [smtpPort, setSmtpPort]   = useState("465");
@@ -65,6 +74,14 @@ export default function SettingsPage() {
       .then(r => r.json())
       .then(d => setHeroUrls(d.urls || []))
       .catch(() => {});
+    // Home banners
+    fetch("/api/admin/home-banners")
+      .then(r => r.json())
+      .then(d => {
+        if (d.banner1) setBanner1(d.banner1);
+        if (d.banner2) setBanner2(d.banner2);
+      })
+      .catch(() => {});
   }, []);
 
   async function uploadHeroImage(file: File) {
@@ -79,6 +96,36 @@ export default function SettingsPage() {
     } finally {
       setHeroUploading(false);
     }
+  }
+
+  async function saveBanner(slot: "1" | "2") {
+    const banner = slot === "1" ? banner1 : banner2;
+    const setSaving = slot === "1" ? setSavingBanner1 : setSavingBanner2;
+    setSaving(true);
+    try {
+      const res = await apiRequest("/api/admin/home-banners", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slot, banner }),
+      });
+      const d = await res.json();
+      if (d.ok) toast.success(`Banner ${slot} salvo!`);
+      else toast.error(d.error || "Erro ao salvar");
+    } finally { setSaving(false); }
+  }
+
+  async function uploadBannerImage(slot: "1" | "2", file: File) {
+    const setUploading = slot === "1" ? setUploadingBanner1 : setUploadingBanner2;
+    const setBanner    = slot === "1" ? setBanner1 : setBanner2;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("slot", slot);
+      const res = await apiRequest("/api/admin/home-banners", { method: "PUT", body: fd });
+      const d   = await res.json();
+      if (d.url) setBanner(prev => ({ ...prev, imageUrl: d.url }));
+      else toast.error(d.error || "Erro no upload");
+    } finally { setUploading(false); }
   }
 
   async function deleteHeroImage(url: string) {
@@ -460,6 +507,128 @@ export default function SettingsPage() {
           </button>
         </div>
       </motion.div>
+
+      {/* Banners Horizontais da Home */}
+      {[{ slot: "1" as const, banner: banner1, setBanner: setBanner1, saving: savingBanner1, uploading: uploadingBanner1 },
+        { slot: "2" as const, banner: banner2, setBanner: setBanner2, saving: savingBanner2, uploading: uploadingBanner2 }
+      ].map(({ slot, banner, setBanner, saving, uploading }) => (
+        <div key={slot} className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 bg-amber-100 rounded-xl flex items-center justify-center">
+                <Megaphone size={18} className="text-amber-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 text-sm">Banner Horizontal {slot}</h3>
+                <p className="text-xs text-slate-400">Aparece na página inicial entre os imóveis</p>
+              </div>
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <span className="text-xs text-slate-500">Ativo</span>
+              <div
+                onClick={() => setBanner(p => ({ ...p, active: !p.active }))}
+                className={`w-10 h-5 rounded-full transition-colors relative ${banner.active ? "bg-brand-500" : "bg-slate-200"}`}
+              >
+                <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${banner.active ? "translate-x-5" : "translate-x-0.5"}`} />
+              </div>
+            </label>
+          </div>
+
+          {/* Preview */}
+          {(banner.imageUrl || banner.title) && (
+            <div className="relative rounded-xl overflow-hidden mb-4 h-24" style={{ background: banner.bgColor }}>
+              {banner.imageUrl && <img src={banner.imageUrl} alt="" className="absolute inset-0 w-full h-full object-cover opacity-30" />}
+              <div className="relative z-10 flex items-center justify-between px-4 h-full">
+                <div>
+                  <p className="font-bold text-sm" style={{ color: banner.textColor }}>{banner.title || "Título do banner"}</p>
+                  {banner.subtitle && <p className="text-xs opacity-70" style={{ color: banner.textColor }}>{banner.subtitle}</p>}
+                </div>
+                {banner.ctaText && (
+                  <span className="text-xs font-bold px-3 py-1.5 rounded-lg" style={{ background: banner.textColor, color: banner.bgColor }}>
+                    {banner.ctaText} →
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Título *</label>
+                <input value={banner.title} onChange={e => setBanner(p => ({ ...p, title: e.target.value }))}
+                  className="input-base text-xs w-full" placeholder="Ex: Temporada de Verão" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Subtítulo</label>
+                <input value={banner.subtitle} onChange={e => setBanner(p => ({ ...p, subtitle: e.target.value }))}
+                  className="input-base text-xs w-full" placeholder="Ex: Descontos especiais" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Texto do botão</label>
+                <input value={banner.ctaText} onChange={e => setBanner(p => ({ ...p, ctaText: e.target.value }))}
+                  className="input-base text-xs w-full" placeholder="Ver imóveis" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Link do botão</label>
+                <input value={banner.ctaUrl} onChange={e => setBanner(p => ({ ...p, ctaUrl: e.target.value }))}
+                  className="input-base text-xs w-full" placeholder="/imoveis" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Cor de fundo</label>
+                <div className="flex items-center gap-2">
+                  <input type="color" value={banner.bgColor} onChange={e => setBanner(p => ({ ...p, bgColor: e.target.value }))}
+                    className="w-9 h-9 rounded-lg border border-slate-200 cursor-pointer p-0.5" />
+                  <input value={banner.bgColor} onChange={e => setBanner(p => ({ ...p, bgColor: e.target.value }))}
+                    className="input-base text-xs flex-1" placeholder="#1a1a2e" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Cor do texto</label>
+                <div className="flex items-center gap-2">
+                  <input type="color" value={banner.textColor} onChange={e => setBanner(p => ({ ...p, textColor: e.target.value }))}
+                    className="w-9 h-9 rounded-lg border border-slate-200 cursor-pointer p-0.5" />
+                  <input value={banner.textColor} onChange={e => setBanner(p => ({ ...p, textColor: e.target.value }))}
+                    className="input-base text-xs flex-1" placeholder="#ffffff" />
+                </div>
+              </div>
+            </div>
+
+            {/* Upload de foto */}
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Foto de fundo</label>
+              <div className="flex items-center gap-2">
+                {banner.imageUrl && (
+                  <img src={banner.imageUrl} alt="" className="w-12 h-9 object-cover rounded-lg border border-slate-200" />
+                )}
+                <label className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border border-dashed border-slate-300 text-xs text-slate-500 cursor-pointer hover:bg-slate-50 transition ${uploading ? "opacity-50 pointer-events-none" : ""}`}>
+                  {uploading ? <Loader2 size={12} className="animate-spin" /> : <ImagePlus size={12} />}
+                  {uploading ? "Enviando..." : banner.imageUrl ? "Trocar foto" : "Adicionar foto"}
+                  <input type="file" accept="image/*" className="hidden"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) uploadBannerImage(slot, f); e.target.value = ""; }} />
+                </label>
+                {banner.imageUrl && (
+                  <button onClick={() => setBanner(p => ({ ...p, imageUrl: "" }))}
+                    className="p-1.5 text-slate-400 hover:text-red-500 transition">
+                    <Trash2 size={13} />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <button onClick={() => saveBanner(slot)}
+              disabled={saving || !banner.title}
+              className="w-full py-2.5 rounded-xl bg-brand-600 text-white text-sm font-semibold hover:bg-brand-700 transition disabled:opacity-50 flex items-center justify-center gap-2">
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+              {saving ? "Salvando..." : `Salvar Banner ${slot}`}
+            </button>
+          </div>
+        </div>
+      ))}
 
       {/* Banner Hero */}
       <div className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">

@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { Search, Calendar, Users, ChevronDown, Star, ArrowRight, MapPin } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
+import HomeBannerBlock from "@/components/HomeBannerBlock";
 
 interface Property {
   id: string;
@@ -35,6 +36,7 @@ export default function ImoveisPage() {
   const [heroIndex, setHeroIndex]   = useState(0);
   const [heroImages, setHeroImages] = useState<string[]>(DEFAULT_HERO_IMAGES);
   const [searchOpen, setSearchOpen] = useState(true);
+  const [homeBanners, setHomeBanners] = useState<any[]>([]);
   const [checkIn, setCheckIn] = useState("");
   const [checkOut, setCheckOut] = useState("");
   const [guests, setGuests] = useState(2);
@@ -50,6 +52,10 @@ export default function ImoveisPage() {
     fetch("/api/admin/hero-images")
       .then(r => r.json())
       .then(d => { if (d.urls?.length) setHeroImages(d.urls); })
+      .catch(() => {});
+    fetch("/api/public/home-banners")
+      .then(r => r.json())
+      .then(d => setHomeBanners(d.banners || []))
       .catch(() => {});
   }, []);
 
@@ -262,6 +268,15 @@ export default function ImoveisPage() {
           )}
         </div>
       </section>
+
+      {/* ── HOME BANNERS ── */}
+      {homeBanners.length > 0 && (
+        <section className="px-4 pb-8 max-w-6xl mx-auto">
+          {homeBanners.map((b, i) => (
+            <HomeBannerBlock key={i} banner={b} />
+          ))}
+        </section>
+      )}
 
       {/* ── BENEFITS ── */}
       <section className="py-24 px-4" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
