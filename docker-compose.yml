@@ -17,6 +17,7 @@ services:
       - PRISMA_QUERY_ENGINE_LIBRARY=/app/node_modules/.prisma/client/libquery_engine-linux-musl-openssl-3.0.x.so.node
     volumes:
       - rental_data:/app/prisma
+      - rental_uploads:/app/public/uploads
     networks:
       - Lurds
     deploy:
@@ -40,6 +41,7 @@ services:
 
 volumes:
   rental_data:
+  rental_uploads:
 
 networks:
   Lurds:
