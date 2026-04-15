@@ -157,7 +157,13 @@ export default function ImoveisPage() {
                     <label className="block text-xs mb-1" style={{ color: "#c9a84c" }}>HÓSPEDES</label>
                     <select value={guests} onChange={e => setGuests(Number(e.target.value))}
                       className="w-full bg-transparent text-white outline-none text-sm">
-                      {[1,2,3,4,5,6,7,8,9,10].map(n => <option key={n} value={n} style={{ background: "#1a1a20" }}>{n} hóspede{n > 1 ? "s" : ""}</option>)}
+                      {[
+                        { value: 1,  label: "1 – 5 hóspedes" },
+                        { value: 6,  label: "6 – 10 hóspedes" },
+                        { value: 11, label: "11 – 15 hóspedes" },
+                        { value: 16, label: "16 – 20 hóspedes" },
+                        { value: 21, label: "21+ hóspedes" },
+                      ].map(o => <option key={o.value} value={o.value} style={{ background: "#1a1a20" }}>{o.label}</option>)}
                     </select>
                   </div>
                   <div className="p-3 flex items-center justify-center">

@@ -196,7 +196,7 @@ function PhotoModal({ property, onClose }: { property: Property; onClose: () => 
             />
           </label>
           <p className="text-[10px] text-slate-400 text-center mt-2">
-            JPG, PNG, WEBP · Múltiplas fotos de uma vez · Passe o mouse sobre a foto para ver as opções
+            JPG, PNG, WEBP, AVIF, HEIC · Múltiplas fotos de uma vez · Passe o mouse sobre a foto para ver as opções
           </p>
         </div>
       </motion.div>

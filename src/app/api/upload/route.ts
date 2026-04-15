@@ -3,6 +3,13 @@ import { getAuthUser } from "@/lib/auth";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 
+// Permite uploads de até 50MB (fotos AVIF/HEIC são grandes)
+export const config = {
+  api: { bodyParser: false },
+};
+
+export const maxDuration = 60;
+
 export async function POST(req: NextRequest) {
   const user = await getAuthUser(req);
   if (!user || user.role === "OWNER") {
