@@ -42,3 +42,7 @@ jobs:
           # Permite cache para build mais rápido
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Deploy no servidor via Portainer
+        run: |
+          curl -X POST "${{ secrets.PORTAINER_WEBHOOK_URL }}"
