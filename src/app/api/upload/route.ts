@@ -3,11 +3,6 @@ import { getAuthUser } from "@/lib/auth";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 
-// Permite uploads de até 50MB (fotos AVIF/HEIC são grandes)
-export const config = {
-  api: { bodyParser: false },
-};
-
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
@@ -25,20 +20,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Arquivo e imóvel são obrigatórios" }, { status: 400 });
     }
 
-    const uploadDir = path.join(process.cwd(), "public", "uploads", propertyId);
+    // Salva no volume do banco (/app/prisma/uploads) — sempre gravável e persistente
+    const uploadDir = path.join(process.cwd(), "prisma", "uploads", propertyId);
     await mkdir(uploadDir, { recursive: true });
 
     const urls: string[] = [];
 
     for (const file of files) {
-      const ext      = file.name.split(".").pop()?.toLowerCase() || "jpg";
-      const allowed  = ["jpg","jpeg","png","webp","heic","heif","avif"];
+      const ext     = file.name.split(".").pop()?.toLowerCase() || "jpg";
+      const allowed = ["jpg","jpeg","png","webp","heic","heif","avif"];
       if (!allowed.includes(ext)) continue;
 
       const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
       const buffer   = Buffer.from(await file.arrayBuffer());
       await writeFile(path.join(uploadDir, filename), buffer);
-      urls.push(`/uploads/${propertyId}/${filename}`);
+      urls.push(`/api/files/${propertyId}/${filename}`);
     }
 
     return NextResponse.json({ urls });
