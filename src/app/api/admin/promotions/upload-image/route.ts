@@ -19,13 +19,17 @@ export async function POST(req: NextRequest) {
 
     if (!file) return NextResponse.json({ error: "Arquivo não enviado" }, { status: 400 });
 
-    const allowed = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif", "image/avif", "image/heic", "image/heif"];
-    if (!allowed.includes(file.type)) {
-      return NextResponse.json({ error: "Formato não suportado. Use JPG, PNG, WEBP, AVIF ou GIF." }, { status: 400 });
+    const allowedMime = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif", "image/avif", "image/heic", "image/heif", "application/octet-stream"];
+    const allowedExt  = ["jpg","jpeg","png","webp","gif","avif","heic","heif"];
+    const ext = (file.name.split(".").pop() ?? "jpg").toLowerCase();
+
+    if (!allowedMime.includes(file.type) && !allowedExt.includes(ext)) {
+      return NextResponse.json({ error: "Formato não suportado. Use JPG, PNG, WEBP ou GIF." }, { status: 400 });
     }
 
-    const ext = file.name.split(".").pop()?.toLowerCase() ?? "jpg";
-    const filename = `promo-${Date.now()}.${ext}`;
+    // Normaliza extensão: heic/heif → jpg para exibição no browser
+    const saveExt = ["heic","heif"].includes(ext) ? "jpg" : ext;
+    const filename = `promo-${Date.now()}.${saveExt}`;
 
     await mkdir(UPLOAD_DIR, { recursive: true });
     const bytes = await file.arrayBuffer();

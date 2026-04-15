@@ -126,21 +126,37 @@ export default function PromotionsPage() {
   async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // Limite de 8 MB no cliente
+    if (file.size > 8 * 1024 * 1024) {
+      toast.error("Imagem muito grande. Máximo 8 MB.");
+      if (fileRef.current) fileRef.current.value = "";
+      return;
+    }
+
     setUploading(true);
     try {
       const fd = new FormData();
       fd.append("file", file);
       const token = localStorage.getItem("token");
-      // Não usar apiRequest aqui — ele força Content-Type: application/json
-      // que quebra o multipart/form-data do FormData
       const res = await fetch("/api/admin/promotions/upload-image", {
         method: "POST",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: fd,
       });
-      const data = await res.json();
-      if (data.url) setForm((f) => ({ ...f, imageUrl: data.url }));
-      else alert(data.error ?? "Erro ao fazer upload");
+
+      // Trata respostas não-JSON (ex: 413 Payload Too Large do Next.js)
+      let data: { url?: string; error?: string } = {};
+      try { data = await res.json(); } catch { data = { error: `Erro ${res.status}` }; }
+
+      if (data.url) {
+        setForm((f) => ({ ...f, imageUrl: data.url! }));
+        toast.success("Imagem enviada!");
+      } else {
+        toast.error(data.error ?? "Erro ao fazer upload");
+      }
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Erro ao enviar imagem");
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
