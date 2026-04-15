@@ -43,4 +43,4 @@ volumes:
 
 networks:
   Lurds:
-    external: tr
+    external: true
