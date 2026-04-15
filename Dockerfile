@@ -20,8 +20,8 @@ ENV NODE_ENV production
 # Gerar o cliente Prisma
 RUN npx prisma generate
 
-# Inicializar o banco SQLite em /app/data/dev.db (local correto para producao)
-RUN mkdir -p /app/data && DATABASE_URL="file:/app/data/dev.db" npx prisma db push --skip-generate
+# Inicializar o banco SQLite em /app/prisma/dev.db
+RUN npx prisma db push --skip-generate
 
 # Build da aplicacao
 RUN npm run build
@@ -53,9 +53,8 @@ COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
 
-# Copiar banco inicializado para /app/data (sera sobrescrito pelo volume se ja existir em producao)
-RUN mkdir -p /app/data
-COPY --from=builder --chown=nextjs:nodejs /app/data/dev.db ./data/dev.db
+# Criar diretorio /app/data com permissoes corretas para o volume
+RUN mkdir -p /app/data && chown nextjs:nodejs /app/data
 
 USER nextjs
 
