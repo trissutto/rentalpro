@@ -405,15 +405,19 @@ export default function PagarPage() {
   }, []);
 
   // ── Compute max installments ─────────────────────────────────────────
+  // Sempre mostra pelo menos 1 opção (Entrada + Saldo) independente do prazo.
+  // Para check-ins distantes, calcula quantas parcelas mensais cabem.
   useEffect(() => {
     if (!reservation) return;
     const checkIn = new Date(reservation.checkIn);
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    const deadline = new Date(checkIn); deadline.setDate(deadline.getDate() - 7);
+    const deadline = new Date(checkIn); deadline.setDate(deadline.getDate() - 2); // 2 dias antes do check-in
     const firstInstallment = new Date(today); firstInstallment.setDate(firstInstallment.getDate() + 30);
-    const max = Math.max(0, Math.floor((deadline.getTime() - firstInstallment.getTime()) / (30 * 86400_000)) + 1);
+    const daysCalc = Math.max(0, Math.floor((deadline.getTime() - firstInstallment.getTime()) / (30 * 86400_000)) + 1);
+    // Mínimo 1: sempre mostra "Entrada + Saldo" mesmo para check-ins próximos
+    const max = Math.max(1, daysCalc);
     setMaxInstallments(max);
-    setSelectedInstallments(Math.max(1, max));
+    setSelectedInstallments(Math.max(1, daysCalc));
   }, [reservation]);
 
   // ── Compute installment preview ───────────────────────────────────────
@@ -424,11 +428,19 @@ export default function PagarPage() {
     const remaining = total - entry;
     const monthly = Math.round((remaining / selectedInstallments) * 100) / 100;
     const today = new Date().toISOString().slice(0, 10);
+    // Vencimento do saldo: 2 dias antes do check-in (para check-ins próximos)
+    // ou 30 dias após hoje (para parcelamentos normais)
+    const checkInDate = new Date(reservation.checkIn);
+    const twoDaysBefore = new Date(checkInDate); twoDaysBefore.setDate(twoDaysBefore.getDate() - 2);
+    const thirtyDaysOut = new Date(); thirtyDaysOut.setDate(thirtyDaysOut.getDate() + 30);
+    const balanceDue = twoDaysBefore < thirtyDaysOut
+      ? twoDaysBefore.toISOString().slice(0, 10)
+      : addDays(today, 30);
     const items: InstallmentItem[] = [
       { seq: 1, label: "Entrada (30%)", amount: entry, dueDate: today, paid: false },
     ];
     for (let i = 1; i <= selectedInstallments; i++) {
-      const dueDate = addDays(today, 30 * i);
+      const dueDate = selectedInstallments === 1 ? balanceDue : addDays(today, 30 * i);
       const amount = i === selectedInstallments
         ? Math.round((total - entry - monthly * (selectedInstallments - 1)) * 100) / 100
         : monthly;
