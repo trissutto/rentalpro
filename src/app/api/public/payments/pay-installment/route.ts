@@ -161,4 +161,10 @@ export async function POST(req: NextRequest) {
       // PIX data
       pixText: qrCode?.text ?? null,
       pixImageLink: qrCode?.links?.find((l: any) => l.media === "image/png")?.href ?? null,
-      pixExpiresAt: qrCode?.expiration_dat
+      pixExpiresAt: qrCode?.expiration_date ?? null,
+    });
+  } catch (e) {
+    console.error("pay-installment error:", e);
+    return NextResponse.json({ error: "Erro interno" }, { status: 500 });
+  }
+}
