@@ -52,6 +52,14 @@ export async function GET(req: NextRequest) {
     if (res.ok && data.public_key) {
       pbOk = true;
       pbPublicKey = data.public_key;
+      // Auto-save public key to DB so payment page works immediately
+      try {
+        await prisma.setting.upsert({
+          where: { key: "pagbank_public_key" },
+          update: { value: pbPublicKey },
+          create: { key: "pagbank_public_key", value: pbPublicKey },
+        });
+      } catch { /* ignore save error, key still returned */ }
     } else {
       pbError = `HTTP ${res.status}: ${data.message || data.error_messages?.map((m: {description: string}) => m.description).join(", ") || JSON.stringify(data)}`;
     }
