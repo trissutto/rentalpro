@@ -35,44 +35,42 @@ export async function GET(req: NextRequest) {
     hasSpaces: rawToken !== token,
   };
 
-  // Test: GET /accounts — validate token by fetching account info
-  let pbAccount: Record<string, unknown> | null = null;
-  let pbAccountError: string | null = null;
+  // Test: POST /public-keys — valid endpoint for integration token validation
+  let pbOk = false;
+  let pbError: string | null = null;
+  let pbPublicKey: string | null = null;
   try {
-    const res = await fetch(`${PB_API}/accounts`, {
-      headers: { "Authorization": `Bearer ${token}` },
+    const res = await fetch(`${PB_API}/public-keys`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ type: "card" }),
     });
     const data = await res.json();
-    if (res.ok) {
-      pbAccount = {
-        id: data.id,
-        email: data.email,
-        name: data.name,
-        type: data.type,
-      };
+    if (res.ok && data.public_key) {
+      pbOk = true;
+      pbPublicKey = data.public_key;
     } else {
-      pbAccountError = `HTTP ${res.status}: ${data.description || data.error || JSON.stringify(data)}`;
+      pbError = `HTTP ${res.status}: ${data.message || data.error_messages?.map((m: {description: string}) => m.description).join(", ") || JSON.stringify(data)}`;
     }
   } catch (e) {
-    pbAccountError = `Falha de rede: ${e instanceof Error ? e.message : String(e)}`;
+    pbError = `Falha de rede: ${e instanceof Error ? e.message : String(e)}`;
   }
 
-  const allOk = !!pbAccount;
-
   return NextResponse.json({
-    ok: allOk,
+    ok: pbOk,
     tokenInfo,
     tests: {
-      accountFetch: pbAccount
-        ? { ok: true, data: pbAccount }
-        : { ok: false, error: pbAccountError },
+      accountFetch: pbOk
+        ? { ok: true, data: { publicKey: pbPublicKey?.slice(0, 40) + "..." } }
+        : { ok: false, error: pbError },
     },
-    recommendation: allOk
-      ? "✅ Token PagBank funcionando! Webhook: configure /api/webhooks/pagbank no painel PagBank."
-      : pbAccountError?.includes("401") || pbAccountError?.includes("Unauthorized")
-        ? "❌ Token inválido. Gere um novo token em: PagBank → Conta → Token de Integração."
-        : pbAccountError?.includes("403")
-          ? "❌ Token sem permissão. Verifique as permissões na conta PagBank."
-          : "❌ Verifique o token e tente novamente.",
+    recommendation: pbOk
+      ? "✅ Token PagBank funcionando! Chave pública obtida com sucesso."
+      : pbError?.includes("401") || pbError?.includes("Unauthorized") || pbError?.includes("403")
+        ? "❌ Token inválido ou sem permissão. Verifique o Token de Integração em: PagBank → Conta → Integrações → Token."
+        : "❌ Verifique o token e tente novamente.",
   });
 }
