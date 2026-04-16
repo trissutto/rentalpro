@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
     if (method === "pix") {
       payload = {
         reference_id: referenceId,
-        description: `${item.label} - Reserva ${r.code} (${propertyName})`,
+        description: `${item.label} — Reserva ${r.code} (${propertyName})`,
         amount: { value: amountCents, currency: "BRL" },
         payment_method: { type: "PIX" },
         ...(isLocalhost ? {} : { notification_urls: [`${origin}/api/webhooks/pagbank`] }),
