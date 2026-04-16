@@ -62,9 +62,9 @@ export async function POST(req: NextRequest) {
     if (method === "pix") {
       payload = {
         reference_id: referenceId,
-        description: `${item.label} — Reserva ${r.code} (${propertyName})`,
+        description: `${item.label} - Reserva ${r.code} (${propertyName})`,
         amount: { value: amountCents, currency: "BRL" },
-        payment_method: { type: "PIX", installments: 1, capture: true },
+        payment_method: { type: "PIX" },
         ...(isLocalhost ? {} : { notification_urls: [`${origin}/api/webhooks/pagbank`] }),
       };
     } else if (method === "card") {
@@ -161,10 +161,4 @@ export async function POST(req: NextRequest) {
       // PIX data
       pixText: qrCode?.text ?? null,
       pixImageLink: qrCode?.links?.find((l: any) => l.media === "image/png")?.href ?? null,
-      pixExpiresAt: qrCode?.expiration_date ?? null,
-    });
-  } catch (e) {
-    console.error("pay-installment error:", e);
-    return NextResponse.json({ error: "Erro interno" }, { status: 500 });
-  }
-}
+      pixExpiresAt: qrCode?.expiration_dat

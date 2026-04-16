@@ -35,12 +35,10 @@ export async function POST(req: NextRequest) {
 
     const payload: Record<string, unknown> = {
       reference_id: reservation.code,
-      description: `Reserva ${reservation.property.name} — ${reservation.code}`,
+      description: `Reserva ${reservation.property.name} - ${reservation.code}`,
       amount: { value: amountCents, currency: "BRL" },
       payment_method: {
         type: "PIX",
-        installments: 1,
-        capture: true,
       },
       ...(isLocalhost ? {} : {
         notification_urls: [`${origin}/api/webhooks/pagbank`],
@@ -122,7 +120,4 @@ export async function POST(req: NextRequest) {
       expiresAt,
     });
   } catch (err) {
-    console.error("pagbank-pix error:", err);
-    return NextResponse.json({ error: "Erro interno ao gerar PIX" }, { status: 500 });
-  }
-}
+    console.err
