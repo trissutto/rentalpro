@@ -114,7 +114,7 @@ function CardForm({
     if (window.PagSeguro) return true;
     return new Promise((resolve) => {
       const s = document.createElement("script");
-      s.src = "https://assets.pagseguro.com.br/checkout-sdk/js/direct-checkout.min.js";
+      s.src = "https://assets.pagseguro.com.br/checkout-sdk-js/rc/dist/browser/pagseguro.min.js";
       s.async = true;
       s.onload = () => resolve(true);
       s.onerror = () => resolve(false);
