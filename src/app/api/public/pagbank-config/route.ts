@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = "force-dynamic";
+
 const PB_API = "https://api.pagseguro.com";
 
 // Returns PagBank public key for client-side card encryption.
