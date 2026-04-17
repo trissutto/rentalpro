@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
 
     const payload: Record<string, unknown> = {
       reference_id: reservation.code,
-      description: `Reserva ${reservation.property.name} — ${reservation.code}`,
+      description: `Reserva ${reservation.property.name} - ${reservation.code}`,
       amount: { value: amountCents, currency: "BRL" },
       payment_method: {
         type: "CREDIT_CARD",
@@ -117,7 +117,7 @@ export async function POST(req: NextRequest) {
             propertyId: reservation.propertyId,
             type: "INCOME",
             category: "RESERVATION_INCOME",
-            description: `Reserva ${reservation.code} — ${reservation.guestName} (${installLabel})`,
+            description: `Reserva ${reservation.code} - ${reservation.guestName} (${installLabel})`,
             amount: Number(reservation.totalAmount),
             isPaid: true,
             paidAt: new Date(),

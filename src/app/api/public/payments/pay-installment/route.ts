@@ -100,9 +100,11 @@ export async function POST(req: NextRequest) {
 
     const charge = await pbRes.json();
     if (!pbRes.ok) {
-      const msg = charge.error_messages?.[0]?.description
-        || charge.description
-        || "Erro ao processar pagamento";
+      console.error("pay-installment PagBank error:", JSON.stringify(charge));
+      const errObj = charge.error_messages?.[0];
+      const msg = errObj
+        ? `${errObj.description || "erro"} (param: ${errObj.parameter_name || "unknown"})`
+        : charge.description || "Erro ao processar pagamento";
       return NextResponse.json({ error: msg }, { status: pbRes.status });
     }
 
