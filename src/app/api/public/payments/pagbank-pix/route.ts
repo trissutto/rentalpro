@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
 
     const payload: Record<string, unknown> = {
       reference_id: reservation.code,
-      description: `Reserva ${reservation.property.name} — ${reservation.code}`,
+      description: `Reserva ${reservation.property.name} - ${reservation.code}`,
       amount: { value: amountCents, currency: "BRL" },
       payment_method: {
         type: "PIX",
@@ -58,9 +58,10 @@ export async function POST(req: NextRequest) {
     const charge = await pbRes.json();
     if (!pbRes.ok) {
       console.error("PagBank PIX error:", JSON.stringify(charge));
-      const msg = charge.error_messages?.[0]?.description
-        || charge.description
-        || "Erro ao gerar PIX";
+      const errObj = charge.error_messages?.[0];
+      const msg = errObj
+        ? `${errObj.description || "erro"} (${errObj.parameter_name || "unknown"})`
+        : charge.description || "Erro ao gerar PIX";
       return NextResponse.json({ error: msg }, { status: pbRes.status });
     }
 

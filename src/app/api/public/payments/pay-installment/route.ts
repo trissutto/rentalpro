@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
     if (method === "pix") {
       payload = {
         reference_id: referenceId,
-        description: `${item.label} — Reserva ${r.code} (${propertyName})`,
+        description: `${item.label} - Reserva ${r.code} (${propertyName})`,
         amount: { value: amountCents, currency: "BRL" },
         payment_method: { type: "PIX" },
         ...(isLocalhost ? {} : { notification_urls: [`${origin}/api/webhooks/pagbank`] }),
@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
       }
       payload = {
         reference_id: referenceId,
-        description: `${item.label} — Reserva ${r.code} (${propertyName})`,
+        description: `${item.label} - Reserva ${r.code} (${propertyName})`,
         amount: { value: amountCents, currency: "BRL" },
         payment_method: {
           type: "CREDIT_CARD",
@@ -139,7 +139,7 @@ export async function POST(req: NextRequest) {
           propertyId: r.propertyId,
           type: "INCOME",
           category: "INSTALLMENT",
-          description: `${item.label} — ${r.code} (${propertyName})`,
+          description: `${item.label} - ${r.code} (${propertyName})`,
           amount: item.amount,
           isPaid: true,
           paidAt: new Date(),
