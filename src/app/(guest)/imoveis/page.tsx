@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Search, Calendar, Users, ChevronDown, Star, ArrowRight, MapPin } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import HomeBannerBlock from "@/components/HomeBannerBlock";
+import DateRangePicker from "@/components/DateRangePicker";
 
 interface Property {
   id: string;
@@ -126,7 +127,7 @@ export default function ImoveisPage() {
           </motion.div>
         </AnimatePresence>
 
-        <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, rgba(10,10,10,0.1) 0%, rgba(10,10,10,0.5) 100%)" }} />
+        <div className="absolute inset-0 pointer-events-none" style={{ background: "linear-gradient(to bottom, rgba(10,10,10,0.1) 0%, rgba(10,10,10,0.5) 100%)" }} />
 
         <div className="relative z-10 flex flex-col items-center justify-center h-full px-4 text-center">
           <motion.p
@@ -160,17 +161,16 @@ export default function ImoveisPage() {
             Imóveis de alto padrão no Litoral Paulista. Reserve com segurança e exclusividade.
           </motion.p>
 
-          <motion.button
+          <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.8 }}
-            onClick={() => {}}
-            className="flex items-center gap-3 px-8 py-4 rounded-full font-semibold"
-            style={{ background: "#c9a84c", color: "#0a0a0a", fontSize: "0.95rem", cursor: "default" }}
           >
-            <Search size={18} />
-            Verificar disponibilidade
-          </motion.button>
+            <p className="text-xs uppercase tracking-[0.2em] mb-2" style={{ color: "rgba(201,168,76,0.7)" }}>
+              <Search size={14} className="inline mr-2" />
+              Verifique a disponibilidade
+            </p>
+          </motion.div>
 
           <AnimatePresence>
             {searchOpen && (
@@ -182,15 +182,13 @@ export default function ImoveisPage() {
                 style={{ background: "rgba(255,255,255,0.07)", backdropFilter: "blur(20px)", border: "1px solid rgba(201,168,76,0.2)" }}
               >
                 <div className="flex flex-col sm:flex-row gap-0">
-                  <div className="flex-1 p-4 border-b sm:border-b-0 sm:border-r" style={{ borderColor: "rgba(255,255,255,0.1)" }}>
-                    <label className="block text-xs mb-1" style={{ color: "#c9a84c" }}>ENTRADA</label>
-                    <input type="date" value={checkIn} onChange={e => setCheckIn(e.target.value)}
-                      className="w-full bg-transparent text-white outline-none text-sm" />
-                  </div>
-                  <div className="flex-1 p-4 border-b sm:border-b-0 sm:border-r" style={{ borderColor: "rgba(255,255,255,0.1)" }}>
-                    <label className="block text-xs mb-1" style={{ color: "#c9a84c" }}>SAÍDA</label>
-                    <input type="date" value={checkOut} onChange={e => setCheckOut(e.target.value)}
-                      className="w-full bg-transparent text-white outline-none text-sm" />
+                  <div className="flex-[2] p-4 border-b sm:border-b-0 sm:border-r" style={{ borderColor: "rgba(255,255,255,0.1)" }}>
+                    <DateRangePicker
+                      checkIn={checkIn}
+                      checkOut={checkOut}
+                      onChangeCheckIn={setCheckIn}
+                      onChangeCheckOut={setCheckOut}
+                    />
                   </div>
                   <div className="flex-1 p-4 border-b sm:border-b-0 sm:border-r" style={{ borderColor: "rgba(255,255,255,0.1)" }}>
                     <label className="block text-xs mb-1" style={{ color: "#c9a84c" }}>HÓSPEDES</label>
@@ -217,7 +215,7 @@ export default function ImoveisPage() {
           </AnimatePresence>
         </div>
 
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 opacity-40">
+        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 opacity-40 pointer-events-none">
           <div className="w-px h-12 animate-pulse" style={{ background: "#c9a84c" }} />
           <span className="text-xs tracking-widest" style={{ color: "#c9a84c" }}>SCROLL</span>
         </div>
