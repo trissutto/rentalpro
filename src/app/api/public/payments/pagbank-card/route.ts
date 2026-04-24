@@ -71,10 +71,24 @@ export async function POST(req: NextRequest) {
     const charge = await pbRes.json();
     if (!pbRes.ok) {
       console.error("PagBank card error:", JSON.stringify(charge));
-      const msg = charge.error_messages?.[0]?.description
-        || charge.description
-        || "Cartão recusado";
-      return NextResponse.json({ error: msg }, { status: pbRes.status });
+      const errObj = charge.error_messages?.[0];
+      const msg = errObj
+        ? `${errObj.description || "erro"} (${errObj.parameter_name || errObj.code || "unknown"})`
+        : charge.description || "Cartao recusado";
+      return NextResponse.json({ error: msg, pagbankStatus: charge.status, details: errObj }, { status: pbRes.status });
+    }
+
+    // Check if charge was declined
+    if (charge.status === "DECLINED" || charge.status === "CANCELED") {
+      const reason = charge.payment_response?.message || "Pagamento recusado pela operadora";
+      const code = charge.payment_response?.code || "";
+      return NextResponse.json({
+        error: `${reason}${code ? ` (${code})` : ""}`,
+        chargeId: charge.id,
+        status: charge.status,
+        paymentStatus: "FAILED",
+        message: reason,
+      });
     }
 
     // Map PagBank status → internal status
