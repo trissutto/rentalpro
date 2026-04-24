@@ -81,7 +81,7 @@ export default function ImoveisPage() {
     <div style={{ background: "#0a0a0a", minHeight: "100vh", color: "#fff" }}>
 
       {/* ── HERO ── */}
-      <section className="relative min-h-[70vh] max-h-[80vh] overflow-hidden">
+      <section className="relative min-h-[55vh] max-h-[65vh] overflow-hidden">
         <AnimatePresence mode="wait">
           <motion.div
             key={heroIndex}

@@ -28,7 +28,8 @@ RUN npm run build
 
 # Etapa 3: Runner
 FROM node:20-alpine AS runner
-RUN apk add --no-cache openssl
+RUN apk add --no-cache openssl python3 py3-pip \
+    && pip3 install --break-system-packages reportlab
 WORKDIR /app
 
 ENV NODE_ENV production
