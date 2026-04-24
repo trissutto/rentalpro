@@ -59,12 +59,30 @@ export async function POST(req: NextRequest) {
 
     let payload: Record<string, unknown>;
 
+    let useOrdersApi = false;
+
     if (method === "pix") {
+      // PIX uses /orders with qr_codes (NOT /charges)
+      useOrdersApi = true;
       payload = {
         reference_id: referenceId,
-        description: `${item.label} - Reserva ${r.code} (${propertyName})`,
-        amount: { value: amountCents, currency: "BRL" },
-        payment_method: { type: "PIX" },
+        customer: {
+          name: r.guestName || "Hospede",
+          email: r.guestEmail || "guest@reserva.com",
+        },
+        items: [
+          {
+            reference_id: referenceId,
+            name: `${item.label} - Reserva ${r.code} (${propertyName})`,
+            quantity: 1,
+            unit_amount: amountCents,
+          },
+        ],
+        qr_codes: [
+          {
+            amount: { value: amountCents },
+          },
+        ],
         ...(isLocalhost ? {} : { notification_urls: [`${origin}/api/webhooks/pagbank`] }),
       };
     } else if (method === "card") {
@@ -88,7 +106,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Método de pagamento inválido" }, { status: 400 });
     }
 
-    const pbRes = await fetch(`${PB_API}/charges`, {
+    const apiUrl = useOrdersApi ? `${PB_API}/orders` : `${PB_API}/charges`;
+    const pbRes = await fetch(apiUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -108,12 +127,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: msg }, { status: pbRes.status });
     }
 
-    const pbStatus = charge.status as string;
+    // For PIX orders, get status from charges array; for card charges, use direct status
+    const pbStatus = (useOrdersApi ? charge.charges?.[0]?.status : charge.status) as string;
     const approvedStatuses = ["PAID", "AVAILABLE", "AUTHORIZED"];
     const approved = approvedStatuses.includes(pbStatus);
 
-    // For PIX: return QR code data to show in UI
-    const qrCode = charge.payment_method?.qr_codes?.[0];
+    // For PIX orders: qr_codes is at top level; for charges: inside payment_method
+    const qrCode = useOrdersApi
+      ? charge.qr_codes?.[0]
+      : charge.payment_method?.qr_codes?.[0];
 
     if (approved) {
       item.paid = true;

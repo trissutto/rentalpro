@@ -8,22 +8,22 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const { code } = body;
-    if (!code) return NextResponse.json({ error: "Código da reserva obrigatório" }, { status: 400 });
+    if (!code) return NextResponse.json({ error: "Codigo da reserva obrigatorio" }, { status: 400 });
 
     // Load reservation
     const reservation = await prisma.reservation.findUnique({
       where: { code: String(code).toUpperCase() },
       include: { property: { select: { name: true } } },
     });
-    if (!reservation) return NextResponse.json({ error: "Reserva não encontrada" }, { status: 404 });
+    if (!reservation) return NextResponse.json({ error: "Reserva nao encontrada" }, { status: 404 });
     if (reservation.paymentStatus === "PAID") {
-      return NextResponse.json({ error: "Esta reserva já foi paga" }, { status: 409 });
+      return NextResponse.json({ error: "Esta reserva ja foi paga" }, { status: 409 });
     }
 
     // Get PagBank token
     const tokenSetting = await prisma.setting.findUnique({ where: { key: "pagbank_token" } });
     if (!tokenSetting?.value) {
-      return NextResponse.json({ error: "Gateway de pagamento não configurado" }, { status: 400 });
+      return NextResponse.json({ error: "Gateway de pagamento nao configurado" }, { status: 400 });
     }
     const token = tokenSetting.value.trim();
 
@@ -33,19 +33,32 @@ export async function POST(req: NextRequest) {
 
     const amountCents = Math.round(Number(reservation.totalAmount) * 100);
 
+    // PagBank PIX uses /orders with qr_codes (NOT /charges with payment_method)
     const payload: Record<string, unknown> = {
       reference_id: reservation.code,
-      description: `Reserva ${reservation.property.name} - ${reservation.code}`,
-      amount: { value: amountCents, currency: "BRL" },
-      payment_method: {
-        type: "PIX",
+      customer: {
+        name: reservation.guestName || "Hospede",
+        email: reservation.guestEmail || "guest@reserva.com",
       },
+      items: [
+        {
+          reference_id: reservation.code,
+          name: `Reserva ${reservation.property.name} - ${reservation.code}`,
+          quantity: 1,
+          unit_amount: amountCents,
+        },
+      ],
+      qr_codes: [
+        {
+          amount: { value: amountCents },
+        },
+      ],
       ...(isLocalhost ? {} : {
         notification_urls: [`${origin}/api/webhooks/pagbank`],
       }),
     };
 
-    const pbRes = await fetch(`${PB_API}/charges`, {
+    const pbRes = await fetch(`${PB_API}/orders`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -55,26 +68,26 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify(payload),
     });
 
-    const charge = await pbRes.json();
+    const order = await pbRes.json();
     if (!pbRes.ok) {
-      console.error("PagBank PIX error:", JSON.stringify(charge));
-      const errObj = charge.error_messages?.[0];
+      console.error("PagBank PIX error:", JSON.stringify(order));
+      const errObj = order.error_messages?.[0];
       const msg = errObj
         ? `${errObj.description || "erro"} (${errObj.parameter_name || "unknown"})`
-        : charge.description || "Erro ao gerar PIX";
+        : order.description || "Erro ao gerar PIX";
       return NextResponse.json({ error: msg }, { status: pbRes.status });
     }
 
-    // PagBank PIX response: charge.payment_method.qr_codes[0]
-    const qrCode = charge.payment_method?.qr_codes?.[0];
+    // PagBank order response: order.qr_codes[0]
+    const qrCode = order.qr_codes?.[0];
     const pixText = qrCode?.text ?? null;
     const pixImageLink = qrCode?.links?.find((l: any) => l.media === "image/png")?.href ?? null;
     const expiresAt = qrCode?.expiration_date ?? null;
 
-    // Store charge ID on reservation
+    // Store order ID on reservation
     await prisma.reservation.update({
       where: { id: reservation.id },
-      data: { mpPaymentId: charge.id, paymentMethod: "PIX" },
+      data: { mpPaymentId: order.id, paymentMethod: "PIX" },
     });
 
     // Send PIX email
@@ -104,7 +117,7 @@ export async function POST(req: NextRequest) {
             pass: smtp.smtp_pass,
             from: smtp.smtp_from || smtp.smtp_user,
             to: reservation.guestEmail,
-            subject: `🏠 PIX para confirmar sua reserva — ${reservation.property.name}`,
+            subject: `PIX para confirmar sua reserva - ${reservation.property.name}`,
             html,
           });
         }
@@ -114,8 +127,8 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({
-      chargeId: charge.id,
-      status: charge.status,
+      chargeId: order.id,
+      status: order.charges?.[0]?.status || "WAITING",
       pixText,
       pixImageLink,
       expiresAt,
