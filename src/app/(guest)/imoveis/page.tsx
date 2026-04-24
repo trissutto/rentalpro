@@ -64,6 +64,23 @@ export default function ImoveisPage() {
     return () => clearInterval(t);
   }, [heroImages.length]);
 
+  const handleSearch = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (checkIn) params.set("checkIn", checkIn);
+      if (checkOut) params.set("checkOut", checkOut);
+      if (guests) params.set("minGuests", String(guests));
+      const res = await fetch(`/api/public/properties?${params.toString()}`);
+      const data = await res.json();
+      setProperties(data.properties || []);
+    } catch {
+      // keep current list on error
+    } finally {
+      setLoading(false);
+    }
+  }, [checkIn, checkOut, guests]);
+
   const getPhotos = useCallback((p: Property): string[] => {
     try {
       const arr = typeof p.photos === "string" ? JSON.parse(p.photos) : p.photos;
@@ -95,12 +112,12 @@ export default function ImoveisPage() {
               src={heroImages[heroIndex]}
               alt=""
               className="w-full h-full object-cover"
-              style={{ filter: "brightness(0.35)" }}
+              style={{ filter: "brightness(0.55)" }}
             />
           </motion.div>
         </AnimatePresence>
 
-        <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, rgba(10,10,10,0.2) 0%, rgba(10,10,10,0.7) 100%)" }} />
+        <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, rgba(10,10,10,0.1) 0%, rgba(10,10,10,0.5) 100%)" }} />
 
         <div className="relative z-10 flex flex-col items-center justify-center h-full px-4 text-center">
           <motion.p
@@ -180,7 +197,7 @@ export default function ImoveisPage() {
                     </select>
                   </div>
                   <div className="p-3 flex items-center justify-center">
-                    <button className="w-full sm:w-auto px-6 py-3 rounded-xl font-semibold text-sm transition-all hover:opacity-90"
+                    <button onClick={handleSearch} className="w-full sm:w-auto px-6 py-3 rounded-xl font-semibold text-sm transition-all hover:opacity-90"
                       style={{ background: "#c9a84c", color: "#0a0a0a" }}>
                       Buscar
                     </button>

@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
   const where: Record<string, unknown> = { active: true };
   if (city) where.city = { contains: city, mode: "insensitive" };
   if (minGuests || maxGuests) {
-    where.capacity = {
+    where.maxGuests = {
       ...(minGuests ? { gte: minGuests } : {}),
       ...(maxGuests ? { lte: maxGuests } : {}),
     };
@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
     const co = new Date(checkOut);
     const conflicts = await prisma.reservation.findMany({
       where: {
-        status: { in: ["CONFIRMED", "CHECKED_IN"] },
+        status: { in: ["PENDING", "CONFIRMED", "CHECKED_IN"] },
         OR: [{ checkIn: { lt: co }, checkOut: { gt: ci } }],
       },
       select: { propertyId: true },
