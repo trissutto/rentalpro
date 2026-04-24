@@ -40,6 +40,8 @@ export default function ImoveisPage() {
   const [checkIn, setCheckIn] = useState("");
   const [checkOut, setCheckOut] = useState("");
   const [guests, setGuests] = useState(2);
+  const [waNumber, setWaNumber] = useState("5513996040123");
+  const [waMessage, setWaMessage] = useState("Olá! Gostaria de saber mais sobre as casas disponíveis.");
 
   useEffect(() => {
     fetch("/api/public/properties")
@@ -56,6 +58,13 @@ export default function ImoveisPage() {
     fetch("/api/public/home-banners")
       .then(r => r.json())
       .then(d => setHomeBanners(d.banners || []))
+      .catch(() => {});
+    fetch("/api/public/whatsapp-config")
+      .then(r => r.json())
+      .then(d => {
+        if (d.whatsapp_number) setWaNumber(d.whatsapp_number);
+        if (d.whatsapp_message) setWaMessage(d.whatsapp_message);
+      })
       .catch(() => {});
   }, []);
 
@@ -475,7 +484,7 @@ export default function ImoveisPage() {
 
       {/* ── WHATSAPP FLUTUANTE ── */}
       <a
-        href="https://wa.me/5513996040123?text=Ol%C3%A1!%20Gostaria%20de%20saber%20mais%20sobre%20as%20casas%20dispon%C3%ADveis."
+        href={`https://wa.me/${waNumber}?text=${encodeURIComponent(waMessage)}`}
         target="_blank"
         rel="noopener noreferrer"
         className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-5 py-3 rounded-full shadow-2xl transition-all duration-300 hover:scale-105 hover:shadow-green-500/30"

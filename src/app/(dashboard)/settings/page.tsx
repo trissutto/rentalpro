@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { User, Bell, Shield, LogOut, ChevronRight, CreditCard, Eye, EyeOff, Check, Loader2, FlaskConical, CheckCircle2, XCircle, AlertTriangle, Mail, ImagePlus, Trash2, Images, Megaphone } from "lucide-react";
+import { User, Bell, Shield, LogOut, ChevronRight, CreditCard, Eye, EyeOff, Check, Loader2, FlaskConical, CheckCircle2, XCircle, AlertTriangle, Mail, ImagePlus, Trash2, Images, Megaphone, MessageCircle } from "lucide-react";
 import { useAuthStore, apiRequest } from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
@@ -41,6 +41,11 @@ export default function SettingsPage() {
   const [showSmtpPass, setShowSmtpPass] = useState(false);
   const [savingSmtp, setSavingSmtp]     = useState(false);
 
+  // WhatsApp settings
+  const [waNumber, setWaNumber]   = useState("5513996040123");
+  const [waMessage, setWaMessage] = useState("Olá! Gostaria de saber mais sobre as casas disponíveis.");
+  const [savingWa, setSavingWa]   = useState(false);
+
   // Credential test
   type TestResult = {
     ok: boolean;
@@ -66,6 +71,8 @@ export default function SettingsPage() {
           setSmtpUser(d.settings.smtp_user || "");
           setSmtpPass(d.settings.smtp_pass ? "••••••••" : "");
           setSmtpFrom(d.settings.smtp_from || "");
+          if (d.settings.whatsapp_number) setWaNumber(d.settings.whatsapp_number);
+          if (d.settings.whatsapp_message) setWaMessage(d.settings.whatsapp_message);
         }
       })
       .finally(() => setLoadingSettings(false));
@@ -240,6 +247,28 @@ export default function SettingsPage() {
       toast.error("Erro ao salvar configurações de email");
     } finally {
       setSavingSmtp(false);
+    }
+  }
+
+  async function saveWaSettings(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingWa(true);
+    try {
+      await Promise.all([
+        apiRequest("/api/settings", {
+          method: "POST",
+          body: JSON.stringify({ key: "whatsapp_number", value: waNumber }),
+        }),
+        apiRequest("/api/settings", {
+          method: "POST",
+          body: JSON.stringify({ key: "whatsapp_message", value: waMessage }),
+        }),
+      ]);
+      toast.success("Configurações do WhatsApp salvas!");
+    } catch {
+      toast.error("Erro ao salvar configurações do WhatsApp");
+    } finally {
+      setSavingWa(false);
     }
   }
 
@@ -498,6 +527,62 @@ export default function SettingsPage() {
               <button type="submit" disabled={savingSmtp}
                 className="flex items-center gap-1.5 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-xl transition disabled:opacity-60">
                 {savingSmtp ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                Salvar
+              </button>
+            </div>
+          </form>
+        </motion.div>
+      )}
+
+      {/* WhatsApp */}
+      {isAdmin && (
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.09 }}
+          className="card mb-4">
+          <div className="flex items-center gap-2.5 mb-4">
+            <div className="w-9 h-9 bg-emerald-50 rounded-xl flex items-center justify-center">
+              <MessageCircle size={16} className="text-emerald-600" />
+            </div>
+            <div>
+              <p className="font-bold text-slate-900 text-sm">WhatsApp</p>
+              <p className="text-xs text-slate-400">Botão flutuante no site público</p>
+            </div>
+          </div>
+
+          <form onSubmit={saveWaSettings} className="space-y-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                Número do WhatsApp
+                <span className="ml-1.5 font-normal text-slate-400">Código do país + DDD + número (só números)</span>
+              </label>
+              <input
+                type="text"
+                value={waNumber}
+                onChange={e => setWaNumber(e.target.value)}
+                placeholder="5513996040123"
+                className="input-base text-xs font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                Mensagem pré-preenchida
+              </label>
+              <textarea
+                value={waMessage}
+                onChange={e => setWaMessage(e.target.value)}
+                placeholder="Olá! Gostaria de saber mais sobre as casas disponíveis."
+                rows={2}
+                className="input-base text-xs resize-none"
+              />
+            </div>
+
+            <div className="flex items-center justify-between pt-1">
+              <p className="text-xs text-slate-400">
+                Aparece como botão flutuante na página de imóveis.
+              </p>
+              <button type="submit" disabled={savingWa}
+                className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl transition disabled:opacity-60">
+                {savingWa ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
                 Salvar
               </button>
             </div>
