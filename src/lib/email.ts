@@ -12,7 +12,7 @@ interface SendMailOptions {
   port: number;       // 465 (SSL) or 587 (STARTTLS — use 465 for simplicity)
   user: string;       // login email
   pass: string;       // password or app password
-  from: string;       // "Villa Mare <noreply@villamare.com.br>"
+  from: string;       // "Reservas Ita <noreply@reservasita.com.br>"
   to: string;
   subject: string;
   html: string;

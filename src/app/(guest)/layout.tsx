@@ -16,7 +16,7 @@ export default function GuestLayout({ children }: { children: React.ReactNode })
             <div className="w-8 h-8 bg-gradient-to-br from-brand-500 to-brand-700 rounded-xl flex items-center justify-center shadow-md shadow-brand-200">
               <Home className="w-4 h-4 text-white" />
             </div>
-            <span className="font-bold text-slate-900 text-lg tracking-tight">Villa Mare</span>
+            <span className="font-bold text-slate-900 text-lg tracking-tight">Reservas Ita</span>
           </Link>
           <Link
             href="/imoveis"
@@ -37,9 +37,9 @@ export default function GuestLayout({ children }: { children: React.ReactNode })
           <div className="w-6 h-6 bg-gradient-to-br from-brand-500 to-brand-700 rounded-lg flex items-center justify-center">
             <Home className="w-3 h-3 text-white" />
           </div>
-          <span className="text-white font-semibold text-sm">Villa Mare</span>
+          <span className="text-white font-semibold text-sm">Reservas Ita</span>
         </div>
-        © {new Date().getFullYear()} Villa Mare · Todos os direitos reservados
+        © {new Date().getFullYear()} Reservas Ita · Todos os direitos reservados
       </footer>
     </div>
   );

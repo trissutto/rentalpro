@@ -692,7 +692,7 @@ export default function ReservationDetailPage() {
               onClick={() => {
                 const url = `${window.location.origin}/api/public/contract/${reservation.code}`;
                 const msg = encodeURIComponent(
-                  `Olá ${reservation.guestName}! 👋\n\nSegue o contrato da sua reserva na *Villa Mare*.\n\n📄 Acesse o contrato pelo link:\n${url}\n\nCódigo: *${reservation.code}*\n\nQualquer dúvida estamos à disposição!`
+                  `Olá ${reservation.guestName}! 👋\n\nSegue o contrato da sua reserva na *Reservas Ita*.\n\n📄 Acesse o contrato pelo link:\n${url}\n\nCódigo: *${reservation.code}*\n\nQualquer dúvida estamos à disposição!`
                 );
                 const phone = reservation.guestPhone!.replace(/\D/g, "");
                 window.open(`https://wa.me/55${phone}?text=${msg}`, "_blank");

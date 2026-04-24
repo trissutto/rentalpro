@@ -493,7 +493,7 @@ export default function SettingsPage() {
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1.5">Usuário (email de envio)</label>
               <input type="email" value={smtpUser} onChange={e => setSmtpUser(e.target.value)}
-                placeholder="noreply@villamare.com.br" className="input-base text-xs" />
+                placeholder="noreply@reservasita.com.br" className="input-base text-xs" />
             </div>
 
             <div>
@@ -517,7 +517,7 @@ export default function SettingsPage() {
                 Nome de exibição (De:)
               </label>
               <input type="text" value={smtpFrom} onChange={e => setSmtpFrom(e.target.value)}
-                placeholder="Villa Mare <noreply@villamare.com.br>" className="input-base text-xs" />
+                placeholder="Reservas Ita <noreply@reservasita.com.br>" className="input-base text-xs" />
             </div>
 
             <div className="flex items-center justify-between pt-1">
