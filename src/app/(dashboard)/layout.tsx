@@ -3,39 +3,164 @@
 import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, Calendar, Sparkles, Home, DollarSign,
-  Users, Settings, Bell, LogOut, ChevronRight, UserCog, Package, DoorOpen, ClipboardList,
-  BarChart2, Receipt, CreditCard, Megaphone,
+  Users, Settings, Bell, LogOut, ChevronDown, UserCog, Package, DoorOpen, ClipboardList,
+  BarChart2, Receipt, CreditCard, Megaphone, Menu, X,
 } from "lucide-react";
 import { useAuthStore } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 
-const navItems = [
-  { href: "/", icon: LayoutDashboard, label: "Início" },
+/* ─── Nav structure with collapsible groups ─── */
+interface NavItem {
+  href: string;
+  icon: React.ElementType;
+  label: string;
+  adminOnly?: boolean;
+}
+
+interface NavGroup {
+  id: string;
+  label: string;
+  icon: React.ElementType;
+  adminOnly?: boolean;
+  items: NavItem[];
+}
+
+const topItems: NavItem[] = [
+  { href: "/", icon: LayoutDashboard, label: "Painel" },
   { href: "/calendar", icon: Calendar, label: "Calendário" },
-  { href: "/cleaning", icon: Sparkles, label: "Limpeza" },
+  { href: "/reservations", icon: ClipboardList, label: "Reservas" },
   { href: "/properties", icon: Home, label: "Imóveis" },
-  { href: "/financial", icon: DollarSign, label: "Financeiro" },
 ];
 
+const groups: NavGroup[] = [
+  {
+    id: "operations",
+    label: "Operações",
+    icon: Sparkles,
+    items: [
+      { href: "/cleaning", icon: Sparkles, label: "Limpeza" },
+      { href: "/promotions", icon: Megaphone, label: "Promoções", adminOnly: true },
+    ],
+  },
+  {
+    id: "financial",
+    label: "Financeiro",
+    icon: DollarSign,
+    adminOnly: true,
+    items: [
+      { href: "/financial", icon: DollarSign, label: "Resumo" },
+      { href: "/analytics", icon: BarChart2, label: "Analytics" },
+      { href: "/expenses", icon: Receipt, label: "Despesas" },
+      { href: "/payments", icon: CreditCard, label: "Parcelamentos" },
+    ],
+  },
+  {
+    id: "inventory",
+    label: "Inventário",
+    icon: Package,
+    adminOnly: true,
+    items: [
+      { href: "/items", icon: Package, label: "Almoxarifado" },
+      { href: "/checklist", icon: ClipboardList, label: "Por Casa" },
+      { href: "/rooms", icon: DoorOpen, label: "Cômodos" },
+    ],
+  },
+];
+
+const bottomItems: NavItem[] = [
+  { href: "/users", icon: UserCog, label: "Usuários", adminOnly: true },
+  { href: "/settings", icon: Settings, label: "Configurações", adminOnly: true },
+];
+
+/* ─── Sidebar Link ─── */
+function SidebarLink({ item, pathname, collapsed }: { item: NavItem; pathname: string; collapsed?: boolean }) {
+  const Icon = item.icon;
+  const active = pathname === item.href;
+  return (
+    <Link
+      href={item.href}
+      title={collapsed ? item.label : undefined}
+      className={cn(
+        "group flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-200",
+        active
+          ? "bg-white/10 text-white shadow-sm shadow-white/5"
+          : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
+      )}
+    >
+      <Icon size={17} className={cn("flex-shrink-0 transition-colors", active ? "text-blue-400" : "text-slate-500 group-hover:text-slate-300")} />
+      {!collapsed && <span className="truncate">{item.label}</span>}
+      {active && !collapsed && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-400" />}
+    </Link>
+  );
+}
+
+/* ─── Collapsible Group ─── */
+function SidebarGroup({ group, pathname, isAdmin }: { group: NavGroup; pathname: string; isAdmin: boolean }) {
+  const hasActiveChild = group.items.some(i => pathname === i.href);
+  const [open, setOpen] = useState(hasActiveChild);
+  const Icon = group.icon;
+
+  const visibleItems = group.items.filter(i => !i.adminOnly || isAdmin);
+  if (visibleItems.length === 0) return null;
+
+  return (
+    <div>
+      <button
+        onClick={() => setOpen(!open)}
+        className={cn(
+          "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-semibold transition-all duration-200",
+          hasActiveChild
+            ? "text-slate-200"
+            : "text-slate-400 hover:bg-white/5 hover:text-slate-300"
+        )}
+      >
+        <Icon size={17} className={cn("flex-shrink-0", hasActiveChild ? "text-blue-400" : "text-slate-500")} />
+        <span className="truncate">{group.label}</span>
+        <ChevronDown
+          size={14}
+          className={cn(
+            "ml-auto transition-transform duration-300 text-slate-500",
+            open && "rotate-180"
+          )}
+        />
+      </button>
+
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25, ease: "easeInOut" }}
+            className="overflow-hidden"
+          >
+            <div className="ml-3 pl-3 border-l border-white/10 space-y-0.5 py-1">
+              {visibleItems.map(item => (
+                <SidebarLink key={item.href} item={item} pathname={pathname} />
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/* ─── Main Layout ─── */
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const { isAuthenticated, user, logout } = useAuthStore();
   const [hydrated, setHydrated] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
-  // Aguarda o Zustand carregar o token do localStorage antes de redirecionar
-  useEffect(() => {
-    setHydrated(true);
-  }, []);
+  useEffect(() => { setHydrated(true); }, []);
+  useEffect(() => { if (hydrated && !isAuthenticated) router.push("/login"); }, [hydrated, isAuthenticated, router]);
+  useEffect(() => { setMobileOpen(false); }, [pathname]);
 
-  useEffect(() => {
-    if (hydrated && !isAuthenticated) router.push("/login");
-  }, [hydrated, isAuthenticated, router]);
-
-  // Mostra tela de carregamento enquanto hidrata
   if (!hydrated) return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center">
       <div className="text-center">
@@ -50,239 +175,150 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const isAdmin = user?.role === "ADMIN";
   const isOwner = user?.role === "OWNER";
 
-  const visibleNav = navItems.filter((item) => {
+  const visibleTopItems = topItems.filter(item => {
     if (isOwner && item.href === "/cleaning") return false;
-    if (isOwner && item.href === "/") return true;
-    return true;
+    return !item.adminOnly || isAdmin;
   });
 
-  function handleLogout() {
-    logout();
-    router.push("/login");
-  }
+  const visibleGroups = groups.filter(g => !g.adminOnly || isAdmin);
+  const visibleBottomItems = bottomItems.filter(i => !i.adminOnly || isAdmin);
+
+  function handleLogout() { logout(); router.push("/login"); }
+
+  const sidebarContent = (
+    <>
+      {/* Logo */}
+      <div className="px-5 pt-6 pb-4">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
+            <Home className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <p className="font-bold text-white text-sm tracking-wide">RentalPro</p>
+            <p className="text-[10px] text-slate-500 tracking-wider uppercase">Gestão de Imóveis</p>
+          </div>
+        </div>
+      </div>
+
+      {/* User */}
+      <div className="mx-4 mb-4 p-3 rounded-xl bg-white/5 border border-white/5">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center text-white font-bold text-xs shadow-sm">
+            {user?.name?.charAt(0).toUpperCase()}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold text-slate-200 truncate">{user?.name}</p>
+            <p className="text-[10px] text-slate-500">
+              {user?.role === "ADMIN" ? "Administrador" : user?.role === "OWNER" ? "Proprietário" : "Equipe"}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Navigation */}
+      <nav className="flex-1 px-3 space-y-0.5 overflow-y-auto scrollbar-thin">
+        {/* Top items */}
+        {visibleTopItems.map(item => (
+          <SidebarLink key={item.href} item={item} pathname={pathname} />
+        ))}
+
+        {/* Separator */}
+        <div className="py-2">
+          <div className="h-px bg-white/5" />
+        </div>
+
+        {/* Groups */}
+        <div className="space-y-1">
+          {visibleGroups.map(group => (
+            <SidebarGroup key={group.id} group={group} pathname={pathname} isAdmin={isAdmin} />
+          ))}
+        </div>
+
+        {/* Separator */}
+        {visibleBottomItems.length > 0 && (
+          <div className="py-2">
+            <div className="h-px bg-white/5" />
+          </div>
+        )}
+
+        {/* Bottom items */}
+        {visibleBottomItems.map(item => (
+          <SidebarLink key={item.href} item={item} pathname={pathname} />
+        ))}
+      </nav>
+
+      {/* Logout */}
+      <div className="p-3 border-t border-white/5">
+        <button
+          onClick={handleLogout}
+          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium text-slate-500 hover:bg-red-500/10 hover:text-red-400 transition-all duration-200"
+        >
+          <LogOut size={17} />
+          Sair
+        </button>
+      </div>
+    </>
+  );
 
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Desktop sidebar */}
-      <aside className="hidden md:flex fixed left-0 top-0 h-full w-64 bg-white border-r border-slate-200 flex-col z-30">
-        {/* Logo */}
-        <div className="p-6 border-b border-slate-100">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-brand-600 rounded-xl flex items-center justify-center">
-              <Home className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <p className="font-bold text-slate-900">RentalPro</p>
-              <p className="text-xs text-slate-400">Gestão de Imóveis</p>
-            </div>
-          </div>
-        </div>
-
-        {/* User info */}
-        <div className="px-4 py-3 mx-3 mt-3 bg-slate-50 rounded-2xl">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full bg-brand-100 flex items-center justify-center text-brand-700 font-bold text-sm">
-              {user?.name?.charAt(0).toUpperCase()}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-slate-800 truncate">{user?.name}</p>
-              <p className="text-xs text-slate-400 capitalize">{user?.role?.toLowerCase()}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Navigation */}
-        <nav className="flex-1 px-3 py-4 space-y-1">
-          {visibleNav.map((item) => {
-            const Icon = item.icon;
-            const active = pathname === item.href;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all",
-                  active
-                    ? "bg-brand-50 text-brand-700"
-                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                )}
-              >
-                <Icon className={cn("w-4.5 h-4.5", active ? "text-brand-600" : "text-slate-400")} size={18} />
-                {item.label}
-                {active && <ChevronRight className="ml-auto w-4 h-4 text-brand-400" />}
-              </Link>
-            );
-          })}
-
-          {isAdmin && (
-            <>
-              {/* Divider */}
-              <div className="pt-1 pb-0.5">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-3">Financeiro</p>
-              </div>
-              <Link
-                href="/analytics"
-                className={cn(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all",
-                  pathname === "/analytics"
-                    ? "bg-brand-50 text-brand-700"
-                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                )}
-              >
-                <BarChart2 size={18} className={pathname === "/analytics" ? "text-brand-600" : "text-slate-400"} />
-                Analytics
-                {pathname === "/analytics" && <ChevronRight className="ml-auto w-4 h-4 text-brand-400" />}
-              </Link>
-              <Link
-                href="/expenses"
-                className={cn(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all",
-                  pathname === "/expenses"
-                    ? "bg-brand-50 text-brand-700"
-                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                )}
-              >
-                <Receipt size={18} className={pathname === "/expenses" ? "text-brand-600" : "text-slate-400"} />
-                Despesas
-                {pathname === "/expenses" && <ChevronRight className="ml-auto w-4 h-4 text-brand-400" />}
-              </Link>
-              <Link
-                href="/payments"
-                className={cn(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all",
-                  pathname === "/payments"
-                    ? "bg-brand-50 text-brand-700"
-                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                )}
-              >
-                <CreditCard size={18} className={pathname === "/payments" ? "text-brand-600" : "text-slate-400"} />
-                Parcelamentos
-                {pathname === "/payments" && <ChevronRight className="ml-auto w-4 h-4 text-brand-400" />}
-              </Link>
-              {/* Divider */}
-              <div className="pt-1 pb-0.5">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-3">Inventário</p>
-              </div>
-              <Link
-                href="/items"
-                className={cn(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all",
-                  pathname === "/items"
-                    ? "bg-brand-50 text-brand-700"
-                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                )}
-              >
-                <Package size={18} className={pathname === "/items" ? "text-brand-600" : "text-slate-400"} />
-                Almoxarifado
-                {pathname === "/items" && <ChevronRight className="ml-auto w-4 h-4 text-brand-400" />}
-              </Link>
-              <Link
-                href="/checklist"
-                className={cn(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all",
-                  pathname === "/checklist"
-                    ? "bg-brand-50 text-brand-700"
-                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                )}
-              >
-                <ClipboardList size={18} className={pathname === "/checklist" ? "text-brand-600" : "text-slate-400"} />
-                Por Casa
-                {pathname === "/checklist" && <ChevronRight className="ml-auto w-4 h-4 text-brand-400" />}
-              </Link>
-              <Link
-                href="/rooms"
-                className={cn(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all",
-                  pathname === "/rooms"
-                    ? "bg-brand-50 text-brand-700"
-                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                )}
-              >
-                <DoorOpen size={18} className={pathname === "/rooms" ? "text-brand-600" : "text-slate-400"} />
-                Cômodos
-                {pathname === "/rooms" && <ChevronRight className="ml-auto w-4 h-4 text-brand-400" />}
-              </Link>
-            </>
-          )}
-
-          {isAdmin && (
-            <Link
-              href="/promotions"
-              className={cn(
-                "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all",
-                pathname === "/promotions"
-                  ? "bg-brand-50 text-brand-700"
-                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-              )}
-            >
-              <Megaphone size={18} className={pathname === "/promotions" ? "text-brand-600" : "text-slate-400"} />
-              Promoções
-            </Link>
-          )}
-
-          {isAdmin && (
-            <Link
-              href="/users"
-              className={cn(
-                "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all",
-                pathname === "/users"
-                  ? "bg-brand-50 text-brand-700"
-                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-              )}
-            >
-              <UserCog size={18} className="text-slate-400" />
-              Usuários
-            </Link>
-          )}
-
-          {isAdmin && (
-            <Link
-              href="/settings"
-              className={cn(
-                "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all",
-                pathname === "/settings"
-                  ? "bg-brand-50 text-brand-700"
-                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-              )}
-            >
-              <Settings size={18} className="text-slate-400" />
-              Configurações
-            </Link>
-          )}
-        </nav>
-
-        {/* Logout */}
-        <div className="p-4 border-t border-slate-100">
-          <button
-            onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-600 hover:bg-red-50 hover:text-red-600 transition-all"
-          >
-            <LogOut size={18} className="text-slate-400" />
-            Sair
-          </button>
-        </div>
+      <aside className="hidden md:flex fixed left-0 top-0 h-full w-60 bg-[#0f172a] flex-col z-30">
+        {sidebarContent}
       </aside>
 
+      {/* Mobile overlay */}
+      <AnimatePresence>
+        {mobileOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/60 z-40 md:hidden"
+              onClick={() => setMobileOpen(false)}
+            />
+            <motion.aside
+              initial={{ x: -280 }}
+              animate={{ x: 0 }}
+              exit={{ x: -280 }}
+              transition={{ type: "spring", damping: 25, stiffness: 200 }}
+              className="fixed left-0 top-0 h-full w-[260px] bg-[#0f172a] flex flex-col z-50 md:hidden shadow-2xl"
+            >
+              <button
+                onClick={() => setMobileOpen(false)}
+                className="absolute right-3 top-5 w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center text-slate-400 hover:text-white"
+              >
+                <X size={16} />
+              </button>
+              {sidebarContent}
+            </motion.aside>
+          </>
+        )}
+      </AnimatePresence>
+
       {/* Main content */}
-      <main className="md:ml-64 min-h-screen">
+      <main className="md:ml-60 min-h-screen">
         {/* Top bar (mobile) */}
         <header className="sticky top-0 z-20 bg-white/80 backdrop-blur-sm border-b border-slate-200 px-4 py-3 md:hidden flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 bg-brand-600 rounded-lg flex items-center justify-center">
-              <Home className="w-4 h-4 text-white" />
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setMobileOpen(true)}
+              className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100"
+            >
+              <Menu size={20} className="text-slate-700" />
+            </button>
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
+                <Home className="w-4 h-4 text-white" />
+              </div>
+              <span className="font-bold text-slate-900 text-sm">RentalPro</span>
             </div>
-            <span className="font-bold text-slate-900">RentalPro</span>
           </div>
-          <div className="flex items-center gap-2">
-            <button className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-slate-100 relative">
+          <div className="flex items-center gap-1">
+            <button className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 relative">
               <Bell size={18} className="text-slate-600" />
               <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
-            </button>
-            <button
-              onClick={handleLogout}
-              className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-red-50"
-            >
-              <LogOut size={18} className="text-slate-500" />
             </button>
           </div>
         </header>
@@ -301,7 +337,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       {/* Bottom navigation (mobile) */}
       <nav className="bottom-nav md:hidden">
-        {visibleNav.slice(0, 5).map((item) => {
+        {visibleTopItems.slice(0, 5).map((item) => {
           const Icon = item.icon;
           const active = pathname === item.href;
           return (
