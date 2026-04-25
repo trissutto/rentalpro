@@ -437,7 +437,7 @@ export default function PropertyDetailPage() {
     guestName: "",
     guestEmail: "",
     guestPhone: "",
-    guestCount: 2,
+    guestCount: Number(searchParams.get("guests")) || 2,
     checkIn: searchParams.get("checkIn") || "",
     checkOut: searchParams.get("checkOut") || "",
     notes: "",

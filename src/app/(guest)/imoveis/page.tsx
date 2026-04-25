@@ -250,7 +250,7 @@ export default function ImoveisPage() {
                 const cover = getCover(p);
                 return (
                   <motion.div key={p.id} initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}>
-                    <Link href={`/imoveis/${p.slug}`} className="block group">
+                    <Link href={`/imoveis/${p.slug}${checkIn || checkOut || guests ? `?${new URLSearchParams({...(checkIn ? {checkIn} : {}), ...(checkOut ? {checkOut} : {}), ...(guests ? {guests: String(guests)} : {})}).toString()}` : ""}`} className="block group">
                       <div className="rounded-2xl overflow-hidden transition-all duration-300"
                         style={{ background: "#1a1a20", border: "1px solid rgba(255,255,255,0.06)" }}>
                         <div className="relative h-56 overflow-hidden">
