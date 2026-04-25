@@ -216,10 +216,17 @@ function AvailabilityCalendar({
   onSelectCheckIn, onSelectCheckOut,
 }: CalendarProps) {
   const todayStr = new Date().toISOString().slice(0, 10);
-  const [viewYear,  setViewYear]  = useState(() => new Date().getFullYear());
-  const [viewMonth, setViewMonth] = useState(() => new Date().getMonth());
+  const initialCheckIn = searchParams.get("checkIn") || "";
+  const [viewYear,  setViewYear]  = useState(() => {
+    if (initialCheckIn) return Number(initialCheckIn.split("-")[0]);
+    return new Date().getFullYear();
+  });
+  const [viewMonth, setViewMonth] = useState(() => {
+    if (initialCheckIn) return Number(initialCheckIn.split("-")[1]) - 1;
+    return new Date().getMonth();
+  });
   // true = aguardando click do check-out
-  const [pickingOut, setPickingOut] = useState(false);
+  const [pickingOut, setPickingOut] = useState(() => !!(initialCheckIn && !searchParams.get("checkOut")));
 
   const goPrev = () => {
     if (viewMonth === 0) { setViewMonth(11); setViewYear(y => y - 1); }
