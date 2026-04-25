@@ -660,6 +660,47 @@ export default function PropertyDetailPage() {
 
             <form onSubmit={handleReserve} className="space-y-4">
 
+              {/* ── Datas selecionadas (destaque) ── */}
+              <div className="rounded-2xl overflow-hidden" style={{ background: "linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)" }}>
+                <div className="flex items-stretch">
+                  <div className="flex-1 p-4 text-center text-white">
+                    <p className="text-[10px] uppercase tracking-widest opacity-60 mb-1">Entrada</p>
+                    <p className="text-lg font-bold">
+                      {form.checkIn
+                        ? new Date(form.checkIn + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" })
+                        : "Selecione"}
+                    </p>
+                  </div>
+                  <div className="flex items-center px-2">
+                    <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
+                      <span className="text-white text-xs font-bold">{nights > 0 ? `${nights}N` : "→"}</span>
+                    </div>
+                  </div>
+                  <div className="flex-1 p-4 text-center text-white">
+                    <p className="text-[10px] uppercase tracking-widest opacity-60 mb-1">Saída</p>
+                    <p className="text-lg font-bold">
+                      {form.checkOut
+                        ? new Date(form.checkOut + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" })
+                        : "Selecione"}
+                    </p>
+                  </div>
+                  {(form.checkIn || form.checkOut) && (
+                    <button type="button"
+                      onClick={() => setForm(p => ({ ...p, checkIn: "", checkOut: "" }))}
+                      className="flex items-center justify-center px-3 text-white/50 hover:text-white transition">
+                      <X size={16} />
+                    </button>
+                  )}
+                </div>
+                {nights > 0 && dynamicCalc && (
+                  <div className="px-4 pb-3 text-center">
+                    <span className="inline-block px-4 py-1.5 rounded-full text-sm font-bold bg-white/20 text-white">
+                      Total: {formatCurrency(dynamicCalc.total + Number(property.cleaningFee))}
+                    </span>
+                  </div>
+                )}
+              </div>
+
               {/* ── Calendário de disponibilidade ── */}
               <div className="space-y-2">
                 {/* Calendário */}
@@ -676,38 +717,6 @@ export default function PropertyDetailPage() {
                     onSelectCheckIn={(d) => setForm(p => ({ ...p, checkIn: d, checkOut: "" }))}
                     onSelectCheckOut={(d) => setForm(p => ({ ...p, checkOut: d }))}
                   />
-                )}
-
-                {/* Resumo de datas + limpar */}
-                {(form.checkIn || form.checkOut) && (
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 flex items-center gap-1.5 px-3 py-2 bg-brand-50 rounded-xl">
-                      <Calendar size={12} className="text-brand-400 flex-shrink-0" />
-                      <div className="text-xs">
-                        <span className="font-semibold text-brand-700">
-                          {form.checkIn
-                            ? new Date(form.checkIn + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })
-                            : "—"}
-                        </span>
-                        <span className="text-brand-300 mx-1.5">→</span>
-                        <span className="font-semibold text-brand-700">
-                          {form.checkOut
-                            ? new Date(form.checkOut + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })
-                            : "…"}
-                        </span>
-                        {nights > 0 && (
-                          <span className="ml-2 text-brand-500 font-bold">
-                            · {nights} diária{nights > 1 ? "s" : ""}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <button type="button"
-                      onClick={() => setForm(p => ({ ...p, checkIn: "", checkOut: "" }))}
-                      className="w-8 h-8 flex items-center justify-center rounded-xl border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-200 transition">
-                      <X size={13} />
-                    </button>
-                  </div>
                 )}
 
                 {/* Aviso de estadia mínima */}
