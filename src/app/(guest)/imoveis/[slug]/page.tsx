@@ -53,7 +53,7 @@ function PhotoGallery({ photos, coverPhoto, name }: { photos: string[]; coverPho
 
   if (sorted.length === 0) {
     return (
-      <div className="h-72 bg-gradient-to-br from-brand-100 to-brand-300 rounded-3xl flex items-center justify-center mb-6">
+      <div className="aspect-square bg-gradient-to-br from-brand-100 to-brand-300 rounded-3xl flex items-center justify-center mb-6">
         <span className="text-7xl">🏠</span>
       </div>
     );
@@ -66,7 +66,7 @@ function PhotoGallery({ photos, coverPhoto, name }: { photos: string[]; coverPho
     <>
       <div className="relative mb-3 rounded-3xl overflow-hidden group cursor-pointer" onClick={() => setLightbox(true)}>
         <img src={sorted[current]} alt={`${name} - foto ${current + 1}`}
-          className="w-full h-72 object-cover transition-transform duration-300 group-hover:scale-105" />
+          className="w-full aspect-square object-cover transition-transform duration-300 group-hover:scale-105" />
         <div className="absolute inset-0 bg-black/10 group-hover:bg-black/20 transition" />
         <div className="absolute bottom-3 right-3 bg-black/50 text-white text-xs px-2.5 py-1 rounded-full backdrop-blur">
           {current + 1} / {sorted.length}
@@ -532,7 +532,7 @@ export default function PropertyDetailPage() {
 
   if (loading) return (
     <div className="space-y-4">
-      <div className="skeleton h-64 rounded-2xl" />
+      <div className="skeleton aspect-square rounded-2xl" />
       <div className="skeleton h-8 w-1/2 rounded" />
       <div className="skeleton h-32 rounded-2xl" />
     </div>

@@ -253,7 +253,7 @@ export default function ImoveisPage() {
                     <Link href={`/imoveis/${p.slug}${checkIn || checkOut || guests ? `?${new URLSearchParams({...(checkIn ? {checkIn} : {}), ...(checkOut ? {checkOut} : {}), ...(guests ? {guests: String(guests)} : {})}).toString()}` : ""}`} className="block group">
                       <div className="rounded-2xl overflow-hidden transition-all duration-300"
                         style={{ background: "#1a1a20", border: "1px solid rgba(255,255,255,0.06)" }}>
-                        <div className="relative h-56 overflow-hidden">
+                        <div className="relative aspect-square overflow-hidden">
                           {cover ? (
                             <img src={cover} alt={p.name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
                           ) : (
