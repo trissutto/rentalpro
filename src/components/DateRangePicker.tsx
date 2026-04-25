@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight, Calendar, X } from "lucide-react";
 
 interface Props {
@@ -157,15 +158,16 @@ export default function DateRangePicker({ checkIn, checkOut, onChangeCheckIn, on
         <Calendar size={16} style={{ color: "#c9a84c", flexShrink: 0 }} />
       </button>
 
-      {/* Calendar modal */}
-      {open && (
+      {/* Calendar modal — rendered via portal to escape overflow:hidden */}
+      {open && typeof document !== "undefined" && createPortal(
         <>
           {/* Backdrop */}
-          <div className="fixed inset-0 bg-black/70 z-[100]" onClick={() => setOpen(false)} />
+          <div className="fixed inset-0 bg-black/70" style={{ zIndex: 9998 }} onClick={() => setOpen(false)} />
 
           {/* Calendar panel — fullscreen on mobile, floating on desktop */}
           <div
-            className="fixed inset-0 z-[101] flex items-end sm:items-center justify-center sm:p-4"
+            className="fixed inset-0 flex items-end sm:items-center justify-center sm:p-4"
+            style={{ zIndex: 9999 }}
           >
             <div
               className="w-full sm:max-w-[580px] sm:rounded-2xl rounded-t-2xl overflow-hidden"
@@ -249,7 +251,8 @@ export default function DateRangePicker({ checkIn, checkOut, onChangeCheckIn, on
               )}
             </div>
           </div>
-        </>
+        </>,
+        document.body
       )}
     </div>
   );
