@@ -181,8 +181,9 @@ export default function ImoveisPage() {
                 className="mt-4 rounded-2xl overflow-hidden w-full max-w-2xl"
                 style={{ background: "rgba(255,255,255,0.07)", backdropFilter: "blur(20px)", border: "1px solid rgba(201,168,76,0.2)" }}
               >
-                <div className="flex flex-col sm:flex-row gap-0">
-                  <div className="flex-[2] p-4 border-b sm:border-b-0 sm:border-r" style={{ borderColor: "rgba(255,255,255,0.1)" }}>
+                <div className="p-4 space-y-4 sm:space-y-0 sm:flex sm:items-center sm:gap-0">
+                  {/* Datas */}
+                  <div className="sm:flex-[2] sm:pr-4 sm:border-r" style={{ borderColor: "rgba(255,255,255,0.1)" }}>
                     <DateRangePicker
                       checkIn={checkIn}
                       checkOut={checkOut}
@@ -190,21 +191,22 @@ export default function ImoveisPage() {
                       onChangeCheckOut={setCheckOut}
                     />
                   </div>
-                  <div className="flex-1 p-4 border-b sm:border-b-0 sm:border-r" style={{ borderColor: "rgba(255,255,255,0.1)" }}>
-                    <label className="block text-xs mb-1" style={{ color: "#c9a84c" }}>HÓSPEDES</label>
-                    <select value={guests} onChange={e => setGuests(Number(e.target.value))}
-                      className="w-full bg-transparent text-white outline-none text-sm">
-                      {[
-                        { value: 1,  label: "1 – 5 hóspedes" },
-                        { value: 6,  label: "6 – 10 hóspedes" },
-                        { value: 11, label: "11 – 15 hóspedes" },
-                        { value: 16, label: "16 – 20 hóspedes" },
-                        { value: 21, label: "21+ hóspedes" },
-                      ].map(o => <option key={o.value} value={o.value} style={{ background: "#1a1a20" }}>{o.label}</option>)}
-                    </select>
-                  </div>
-                  <div className="p-3 flex items-center justify-center">
-                    <button onClick={handleSearch} className="w-full sm:w-auto px-6 py-3 rounded-xl font-semibold text-sm transition-all hover:opacity-90"
+                  {/* Hóspedes + Buscar */}
+                  <div className="flex items-end gap-3 sm:flex-1 sm:pl-4">
+                    <div className="flex-1">
+                      <label className="block text-[10px] mb-0.5 uppercase tracking-wider" style={{ color: "#c9a84c" }}>Hóspedes</label>
+                      <select value={guests} onChange={e => setGuests(Number(e.target.value))}
+                        className="w-full bg-transparent text-white outline-none text-sm py-1">
+                        {[
+                          { value: 1,  label: "1 – 5" },
+                          { value: 6,  label: "6 – 10" },
+                          { value: 11, label: "11 – 15" },
+                          { value: 16, label: "16 – 20" },
+                          { value: 21, label: "21+" },
+                        ].map(o => <option key={o.value} value={o.value} style={{ background: "#1a1a20" }}>{o.label}</option>)}
+                      </select>
+                    </div>
+                    <button onClick={handleSearch} className="px-5 py-2.5 rounded-xl font-semibold text-sm transition-all hover:opacity-90 whitespace-nowrap"
                       style={{ background: "#c9a84c", color: "#0a0a0a" }}>
                       Buscar
                     </button>
