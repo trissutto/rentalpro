@@ -660,46 +660,38 @@ export default function PropertyDetailPage() {
 
             <form onSubmit={handleReserve} className="space-y-4">
 
-              {/* ── Datas selecionadas (destaque) ── */}
-              <div className="rounded-2xl overflow-hidden" style={{ background: "linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)" }}>
-                <div className="flex items-stretch">
-                  <div className="flex-1 p-4 text-center text-white">
-                    <p className="text-[10px] uppercase tracking-widest opacity-60 mb-1">Entrada</p>
-                    <p className="text-lg font-bold">
+              {/* ── Resumo de datas selecionadas ── */}
+              {(form.checkIn || form.checkOut) && (
+                <div className="flex items-center gap-2 p-3 bg-brand-50 border border-brand-200 rounded-xl">
+                  <Calendar size={16} className="text-brand-600 flex-shrink-0" />
+                  <div className="flex-1 text-sm">
+                    <span className="font-bold text-brand-700">
                       {form.checkIn
-                        ? new Date(form.checkIn + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" })
-                        : "Selecione"}
-                    </p>
-                  </div>
-                  <div className="flex items-center px-2">
-                    <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
-                      <span className="text-white text-xs font-bold">{nights > 0 ? `${nights}N` : "→"}</span>
-                    </div>
-                  </div>
-                  <div className="flex-1 p-4 text-center text-white">
-                    <p className="text-[10px] uppercase tracking-widest opacity-60 mb-1">Saída</p>
-                    <p className="text-lg font-bold">
-                      {form.checkOut
-                        ? new Date(form.checkOut + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" })
-                        : "Selecione"}
-                    </p>
-                  </div>
-                  {(form.checkIn || form.checkOut) && (
-                    <button type="button"
-                      onClick={() => setForm(p => ({ ...p, checkIn: "", checkOut: "" }))}
-                      className="flex items-center justify-center px-3 text-white/50 hover:text-white transition">
-                      <X size={16} />
-                    </button>
-                  )}
-                </div>
-                {nights > 0 && dynamicCalc && (
-                  <div className="px-4 pb-3 text-center">
-                    <span className="inline-block px-4 py-1.5 rounded-full text-sm font-bold bg-white/20 text-white">
-                      Total: {formatCurrency(dynamicCalc.total + Number(property.cleaningFee))}
+                        ? new Date(form.checkIn + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })
+                        : "—"}
                     </span>
+                    <span className="text-brand-400 mx-2">→</span>
+                    <span className="font-bold text-brand-700">
+                      {form.checkOut
+                        ? new Date(form.checkOut + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })
+                        : "…"}
+                    </span>
+                    {nights > 0 && (
+                      <span className="ml-2 text-brand-600 font-bold">· {nights} noite{nights > 1 ? "s" : ""}</span>
+                    )}
+                    {nights > 0 && dynamicCalc && (
+                      <span className="ml-2 font-bold text-brand-800">
+                        · {formatCurrency(dynamicCalc.total + Number(property.cleaningFee))}
+                      </span>
+                    )}
                   </div>
-                )}
-              </div>
+                  <button type="button"
+                    onClick={() => setForm(p => ({ ...p, checkIn: "", checkOut: "" }))}
+                    className="w-7 h-7 flex items-center justify-center rounded-lg text-brand-400 hover:text-red-500 hover:bg-red-50 transition">
+                    <X size={14} />
+                  </button>
+                </div>
+              )}
 
               {/* ── Calendário de disponibilidade ── */}
               <div className="space-y-2">

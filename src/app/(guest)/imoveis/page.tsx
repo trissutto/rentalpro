@@ -88,6 +88,10 @@ export default function ImoveisPage() {
       // keep current list on error
     } finally {
       setLoading(false);
+      // Scroll to properties section
+      setTimeout(() => {
+        document.getElementById("imoveis")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 100);
     }
   }, [checkIn, checkOut, guests]);
 
@@ -233,7 +237,7 @@ export default function ImoveisPage() {
       )}
 
       {/* ── PROPERTIES ── */}
-      <section className="py-24 px-4">
+      <section id="imoveis" className="py-24 px-4 scroll-mt-4">
         <div className="max-w-6xl mx-auto">
           <div className="mb-16">
             <p className="text-xs uppercase tracking-[0.3em] mb-3" style={{ color: "#c9a84c" }}>Nosso portfólio</p>
