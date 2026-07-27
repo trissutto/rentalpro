@@ -16,6 +16,8 @@ COPY . .
 # Variaveis necessarias para o build
 ENV NEXT_TELEMETRY_DISABLED 1
 ENV NODE_ENV production
+# Banco usado apenas durante o build; em producao vem do volume via DATABASE_URL
+ENV DATABASE_URL "file:./dev.db"
 
 # Gerar o cliente Prisma
 RUN npx prisma generate
@@ -28,7 +30,7 @@ RUN npm run build
 
 # Etapa 3: Runner
 FROM node:20-alpine AS runner
-RUN apk add --no-cache openssl python3 py3-pip \
+RUN apk add --no-cache openssl su-exec python3 py3-pip \
     && pip3 install --break-system-packages reportlab
 WORKDIR /app
 
@@ -57,12 +59,17 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/prisma/schema.prisma ./prisma/schema.prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
+# CLI do Prisma: o entrypoint roda `db push` no boot para criar as tabelas
+# quando o volume ainda está vazio (primeira subida no Railway)
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/prisma ./node_modules/prisma
 
-USER nextjs
+COPY --chown=nextjs:nodejs docker-entrypoint.sh ./docker-entrypoint.sh
+RUN chmod +x ./docker-entrypoint.sh
 
 EXPOSE 3000
 ENV PORT 3000
 ENV HOSTNAME "0.0.0.0"
 
-# O banco SQLite será persistido via volume montado em /app/prisma
-CMD ["node", "server.js"]
+# O banco SQLite e os uploads são persistidos no volume montado em /app/prisma.
+# O entrypoint sobe como root só para ajustar dono do volume e cai para `nextjs`.
+CMD ["./docker-entrypoint.sh"]
