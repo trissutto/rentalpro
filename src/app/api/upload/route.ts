@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
+import { otimizarImagem } from "@/lib/image";
 
 export const maxDuration = 60;
 
@@ -32,7 +33,11 @@ export async function POST(req: NextRequest) {
       if (!allowed.includes(ext)) continue;
 
       const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-      const buffer   = Buffer.from(await file.arrayBuffer());
+      const original = Buffer.from(await file.arrayBuffer());
+
+      // Foto de câmera chega com 5-11 MB; sem isso a galeria não abre no 4G
+      const { buffer } = await otimizarImagem(original, ext);
+
       await writeFile(path.join(uploadDir, filename), buffer);
       urls.push(`/api/files/${propertyId}/${filename}`);
     }

@@ -64,6 +64,10 @@ COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modul
 # CLI do Prisma: o entrypoint roda `db push` no boot para criar as tabelas
 # quando o volume ainda está vazio (primeira subida no Railway)
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/prisma ./node_modules/prisma
+# sharp é binário nativo (compressão das fotos). Copiado explicitamente porque
+# o rastreio do standalone nem sempre leva os .node das dependências opcionais.
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/sharp ./node_modules/sharp
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@img ./node_modules/@img
 
 COPY --chown=nextjs:nodejs docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x ./docker-entrypoint.sh

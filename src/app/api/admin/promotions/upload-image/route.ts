@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { writeFile, mkdir } from "fs/promises";
+import { otimizarImagem } from "@/lib/image";
 import path from "path";
 import { getAuthUser } from "@/lib/auth";
 
@@ -32,8 +33,9 @@ export async function POST(req: NextRequest) {
     const filename = `promo-${Date.now()}.${saveExt}`;
 
     await mkdir(UPLOAD_DIR, { recursive: true });
-    const bytes = await file.arrayBuffer();
-    await writeFile(path.join(UPLOAD_DIR, filename), Buffer.from(bytes));
+    const original = Buffer.from(await file.arrayBuffer());
+    const { buffer } = await otimizarImagem(original, saveExt);
+    await writeFile(path.join(UPLOAD_DIR, filename), buffer);
 
     // Serve via rota /api/files/promotions/... (volume persistente)
     return NextResponse.json({ url: `/api/files/promotions/${filename}` });
