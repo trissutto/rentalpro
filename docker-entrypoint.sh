@@ -13,6 +13,9 @@ chown -R nextjs:nodejs /app/prisma
 # `db push` não altera nada — é seguro rodar a cada boot.
 # Sem --accept-data-loss de propósito: se algum dia o schema divergir a ponto
 # de exigir descarte de coluna, é melhor o deploy falhar do que perder reserva.
-su-exec nextjs:nodejs npx prisma db push --skip-generate
+#
+# Chamamos o arquivo do CLI direto em vez de `npx prisma`: a imagem final não
+# carrega node_modules/.bin, que é onde o npx procuraria o executável.
+su-exec nextjs:nodejs node /app/node_modules/prisma/build/index.js db push --skip-generate
 
 exec su-exec nextjs:nodejs node server.js
