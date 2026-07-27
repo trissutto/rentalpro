@@ -1,21 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendMail } from "@/lib/email";
+import { checkCronSecret } from "@/lib/cron-auth";
 import { format, subMonths } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
 export async function GET(req: NextRequest) {
   try {
     // Verify cron secret
-    const authHeader = req.headers.get("x-cron-secret");
-    const cronSecret = process.env.CRON_SECRET || "eae1c76e0dee304f3abe0437f55e553b30573eaa";
-
-    if (authHeader !== cronSecret) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
+    const denied = checkCronSecret(req.headers.get("x-cron-secret"));
+    if (denied) return denied;
 
     // Get month from query params or use previous month
     const { searchParams } = new URL(req.url);
