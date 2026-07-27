@@ -5,7 +5,9 @@ generator client {
 
 datasource db {
   provider = "sqlite"
-  url      = "file:./dev.db"
+  // Caminho do banco vem do ambiente para o arquivo poder morar num volume.
+  // Local: file:./dev.db · Railway: file:/app/prisma/dev.db (volume montado)
+  url      = env("DATABASE_URL")
 }
 
 model User {

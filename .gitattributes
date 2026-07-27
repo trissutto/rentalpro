@@ -1,0 +1,4 @@
+# Scripts de shell precisam de quebra de linha LF: com CRLF o Alpine não
+# consegue executar o entrypoint ("no such file or directory" no /bin/sh).
+*.sh text eol=lf
+Dockerfile text eol=lf
