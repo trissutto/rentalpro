@@ -56,7 +56,9 @@ RUN chown nextjs:nodejs .next
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 # Copia apenas o schema (NUNCA o dev.db — banco fica no volume)
-COPY --from=builder --chown=nextjs:nodejs /app/prisma/schema.prisma ./prisma/schema.prisma
+# O schema vai para FORA de /app/prisma: aquele diretório é o ponto de montagem
+# do volume, e o mount esconde qualquer arquivo que a imagem tenha deixado lá.
+COPY --from=builder --chown=nextjs:nodejs /app/prisma/schema.prisma ./prisma-schema/schema.prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
 # CLI do Prisma: o entrypoint roda `db push` no boot para criar as tabelas
