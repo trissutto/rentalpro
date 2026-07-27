@@ -19,6 +19,12 @@ ENV NODE_ENV production
 # Banco usado apenas durante o build; em producao vem do volume via DATABASE_URL
 ENV DATABASE_URL "file:./dev.db"
 
+# `next build` importa o modulo de autenticacao, que agora se recusa a carregar
+# sem JWT_SECRET. Este valor existe SO durante o build: ARG (ao contrario de
+# ENV) nao fica na imagem, entao em producao vale a variavel real do Railway e
+# a aplicacao continua se recusando a subir sem ela.
+ARG JWT_SECRET="valor-de-build-sem-efeito-em-runtime"
+
 # Gerar o cliente Prisma
 RUN npx prisma generate
 

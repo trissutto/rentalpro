@@ -3,7 +3,22 @@ import bcrypt from "bcryptjs";
 import { NextRequest } from "next/server";
 import { prisma } from "./prisma";
 
-const JWT_SECRET = process.env.JWT_SECRET || "rental-secret-key-change-in-production";
+/**
+ * A chave que assina os tokens de sessão vem SEMPRE do ambiente.
+ *
+ * Havia aqui um valor embutido para quando a variável faltasse. Como o código
+ * é versionado, esse valor era conhecido: qualquer pessoa podia assinar um
+ * token de administrador e entrar no sistema. Preferimos que a aplicação nem
+ * suba sem a chave a subir com uma que está escrita no fonte.
+ */
+const JWT_SECRET = process.env.JWT_SECRET;
+
+if (!JWT_SECRET) {
+  throw new Error(
+    "JWT_SECRET não configurada — defina a variável de ambiente antes de subir a aplicação."
+  );
+}
+
 const JWT_EXPIRES = "7d";
 
 export interface JWTPayload {
