@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-
-const CRON_SECRET = process.env.CRON_SECRET || "eae1c76e0dee304f3abe0437f55e553b30573eaa";
+import { checkCronSecret } from "@/lib/cron-auth";
 
 function isSameDay(a: Date, b: Date) {
   return (
@@ -53,9 +52,8 @@ async function sendWhatsApp(phone: string, message: string): Promise<boolean> {
 export async function GET(req: NextRequest) {
   // Simple secret header auth for cron security
   const secret = req.headers.get("x-cron-secret") || new URL(req.url).searchParams.get("secret");
-  if (secret !== CRON_SECRET) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const denied = checkCronSecret(secret);
+  if (denied) return denied;
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);

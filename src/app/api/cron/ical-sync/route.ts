@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { syncIcalUrl } from "@/lib/ical";
-
-const CRON_SECRET = process.env.CRON_SECRET ?? "eae1c76e0dee304f3abe0437f55e553b30573eaa";
+import { checkCronSecret } from "@/lib/cron-auth";
 
 /**
  * GET /api/cron/ical-sync?secret=XXX
@@ -14,10 +13,8 @@ const CRON_SECRET = process.env.CRON_SECRET ?? "eae1c76e0dee304f3abe0437f55e553b
  *   curl "http://localhost:3000/api/cron/ical-sync?secret=<CRON_SECRET>"
  */
 export async function GET(req: NextRequest) {
-  const secret = new URL(req.url).searchParams.get("secret");
-  if (secret !== CRON_SECRET) {
-    return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
-  }
+  const denied = checkCronSecret(new URL(req.url).searchParams.get("secret"));
+  if (denied) return denied;
 
   const startedAt = Date.now();
   const results: {

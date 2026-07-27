@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-
-const CRON_SECRET = process.env.CRON_SECRET ?? "eae1c76e0dee304f3abe0437f55e553b30573eaa";
+import { checkCronSecret } from "@/lib/cron-auth";
 
 // Conteúdo real coletado dos anúncios do Airbnb em 27/07/2026
 const CONTENT: {
@@ -225,19 +224,40 @@ const CONTENT: {
   }
 ];
 
+/** Campo já preenchido no banco? String vazia, "[]" e null contam como vazio. */
+function preenchido(v: unknown): boolean {
+  if (v === null || v === undefined) return false;
+  const s = String(v).trim();
+  return s !== "" && s !== "[]";
+}
+
 /**
- * GET /api/admin/sync-airbnb-content?secret=XXX
- * Aplica descrições, fotos, comodidades e link iCal do Airbnb
- * nas propriedades correspondentes. Idempotente — pode rodar mais de uma vez.
+ * GET /api/admin/sync-airbnb-content?secret=XXX[&force=1]
+ *
+ * Aplica descrições, fotos, comodidades e link iCal do Airbnb nas propriedades
+ * correspondentes. Idempotente — pode rodar mais de uma vez.
+ *
+ * Por padrão só PREENCHE campos vazios: rodar de novo não desfaz nada que tenha
+ * sido editado no admin depois. Use `force=1` para reimpor o conteúdo do Airbnb
+ * por cima do que estiver lá (aí sim edições manuais se perdem).
+ *
+ * O link iCal é sempre mesclado — sem ele o calendário não sincroniza.
  */
 export async function GET(req: NextRequest) {
-  const secret = new URL(req.url).searchParams.get("secret");
-  if (secret !== CRON_SECRET) {
-    return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
-  }
+  const url = new URL(req.url);
+  const denied = checkCronSecret(url.searchParams.get("secret"));
+  if (denied) return denied;
+
+  const force = url.searchParams.get("force") === "1";
 
   const props = await prisma.property.findMany();
-  const report: { property: string; matched: string | null; updated: boolean }[] = [];
+  const report: {
+    property: string;
+    matched: string | null;
+    updated: boolean;
+    campos?: string[];
+    preservados?: string[];
+  }[] = [];
 
   for (const c of CONTENT) {
     const prop = props.find(p => {
@@ -255,25 +275,49 @@ export async function GET(req: NextRequest) {
     icalUrls = icalUrls.filter(e => e.source !== "airbnb");
     icalUrls.push({ url: c.data.ical, label: "Airbnb", source: "airbnb" });
 
-    await prisma.property.update({
-      where: { id: prop.id },
-      data: {
-        description:  c.data.description,
-        rules:        c.data.rules,
-        amenities:    JSON.stringify(c.data.amenities),
-        photos:       JSON.stringify(c.data.photos),
-        coverPhoto:   c.data.photos[0] ?? prop.coverPhoto,
-        capacity:     c.data.capacity,
-        maxGuests:    c.data.maxGuests,
-        bedrooms:     c.data.bedrooms,
-        bathrooms:    c.data.bathrooms,
-        checkInTime:  c.data.checkInTime,
-        checkOutTime: c.data.checkOutTime,
-        icalUrls:     JSON.stringify(icalUrls),
-      },
+    const candidatos: Record<string, unknown> = {
+      description:  c.data.description,
+      rules:        c.data.rules,
+      amenities:    JSON.stringify(c.data.amenities),
+      photos:       JSON.stringify(c.data.photos),
+      coverPhoto:   c.data.photos[0] ?? prop.coverPhoto,
+      capacity:     c.data.capacity,
+      maxGuests:    c.data.maxGuests,
+      bedrooms:     c.data.bedrooms,
+      bathrooms:    c.data.bathrooms,
+      checkInTime:  c.data.checkInTime,
+      checkOutTime: c.data.checkOutTime,
+    };
+
+    const data: Record<string, unknown> = { icalUrls: JSON.stringify(icalUrls) };
+    const campos: string[] = [];
+    const preservados: string[] = [];
+
+    for (const [campo, valor] of Object.entries(candidatos)) {
+      if (force || !preenchido((prop as Record<string, unknown>)[campo])) {
+        data[campo] = valor;
+        campos.push(campo);
+      } else {
+        preservados.push(campo);
+      }
+    }
+
+    await prisma.property.update({ where: { id: prop.id }, data });
+    report.push({
+      property: prop.name,
+      matched:  c.match.join("/"),
+      updated:  campos.length > 0,
+      campos,
+      preservados,
     });
-    report.push({ property: prop.name, matched: c.match.join("/"), updated: true });
   }
 
-  return NextResponse.json({ ok: true, report });
+  const naoEncontradas = report.filter(r => r.matched === null).map(r => r.property);
+
+  return NextResponse.json({
+    ok: true,
+    force,
+    naoEncontradas,
+    report,
+  });
 }
