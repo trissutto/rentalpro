@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-const CRON_SECRET = process.env.CRON_SECRET || "rental-cron-secret";
+const CRON_SECRET = process.env.CRON_SECRET || "eae1c76e0dee304f3abe0437f55e553b30573eaa";
 
 function isSameDay(a: Date, b: Date) {
   return (

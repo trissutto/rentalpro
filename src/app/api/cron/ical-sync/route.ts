@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { syncIcalUrl } from "@/lib/ical";
 
-const CRON_SECRET = process.env.CRON_SECRET ?? "rentalpro-cron-2026";
+const CRON_SECRET = process.env.CRON_SECRET ?? "eae1c76e0dee304f3abe0437f55e553b30573eaa";
 
 /**
  * GET /api/cron/ical-sync?secret=XXX
@@ -11,7 +11,7 @@ const CRON_SECRET = process.env.CRON_SECRET ?? "rentalpro-cron-2026";
  * Run daily via cron, Windows Task Scheduler, or any HTTP scheduler.
  *
  * Example curl:
- *   curl "http://localhost:3000/api/cron/ical-sync?secret=rentalpro-cron-2026"
+ *   curl "http://localhost:3000/api/cron/ical-sync?secret=<CRON_SECRET>"
  */
 export async function GET(req: NextRequest) {
   const secret = new URL(req.url).searchParams.get("secret");

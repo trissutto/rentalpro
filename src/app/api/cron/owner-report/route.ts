@@ -8,7 +8,7 @@ export async function GET(req: NextRequest) {
   try {
     // Verify cron secret
     const authHeader = req.headers.get("x-cron-secret");
-    const cronSecret = process.env.CRON_SECRET || "rental-cron-secret";
+    const cronSecret = process.env.CRON_SECRET || "eae1c76e0dee304f3abe0437f55e553b30573eaa";
 
     if (authHeader !== cronSecret) {
       return NextResponse.json(

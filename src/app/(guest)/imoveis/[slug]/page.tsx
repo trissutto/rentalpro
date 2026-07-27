@@ -6,7 +6,7 @@ import { motion } from "framer-motion";
 import {
   MapPin, Users, Bed, Bath, Calendar,
   ChevronLeft, CheckCircle2, Loader2,
-  ChevronRight, X, AlertTriangle,
+  ChevronRight, X, AlertTriangle, LayoutGrid, Star,
 } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import toast from "react-hot-toast";
@@ -42,10 +42,11 @@ interface MinNightsRule {
   minNights: number;
 }
 
-// ─── Galeria de fotos ─────────────────────────────────────────────────────────
+// ─── Galeria de fotos (estilo Airbnb) ─────────────────────────────────────────
 function PhotoGallery({ photos, coverPhoto, name }: { photos: string[]; coverPhoto?: string | null; name: string }) {
+  const [showAll, setShowAll] = useState(false);
+  const [lightbox, setLightbox] = useState<number | null>(null);
   const [current, setCurrent] = useState(0);
-  const [lightbox, setLightbox] = useState(false);
 
   const sorted = coverPhoto
     ? [coverPhoto, ...photos.filter(p => p !== coverPhoto)]
@@ -53,7 +54,7 @@ function PhotoGallery({ photos, coverPhoto, name }: { photos: string[]; coverPho
 
   if (sorted.length === 0) {
     return (
-      <div className="aspect-square bg-gradient-to-br from-brand-100 to-brand-300 rounded-3xl flex items-center justify-center mb-6">
+      <div className="aspect-[2/1] bg-gradient-to-br from-brand-100 to-brand-300 rounded-3xl flex items-center justify-center mb-6">
         <span className="text-7xl">🏠</span>
       </div>
     );
@@ -61,62 +62,105 @@ function PhotoGallery({ photos, coverPhoto, name }: { photos: string[]; coverPho
 
   const prev = () => setCurrent(i => (i - 1 + sorted.length) % sorted.length);
   const next = () => setCurrent(i => (i + 1) % sorted.length);
+  const lbPrev = () => setLightbox(i => i === null ? null : (i - 1 + sorted.length) % sorted.length);
+  const lbNext = () => setLightbox(i => i === null ? null : (i + 1) % sorted.length);
 
   return (
     <>
-      <div className="relative mb-3 rounded-3xl overflow-hidden group cursor-pointer" onClick={() => setLightbox(true)}>
-        <img src={sorted[current]} alt={`${name} - foto ${current + 1}`}
-          className="w-full aspect-square object-cover transition-transform duration-300 group-hover:scale-105" />
-        <div className="absolute inset-0 bg-black/10 group-hover:bg-black/20 transition" />
-        <div className="absolute bottom-3 right-3 bg-black/50 text-white text-xs px-2.5 py-1 rounded-full backdrop-blur">
-          {current + 1} / {sorted.length}
+      {/* ── Mobile: carrossel ── */}
+      <div className="relative sm:hidden -mx-4 mb-5">
+        <div className="relative aspect-[4/3] overflow-hidden bg-slate-100" onClick={() => setShowAll(true)}>
+          <img src={sorted[current]} alt={`${name} - foto ${current + 1}`} className="w-full h-full object-cover" />
+          <div className="absolute bottom-3 right-3 bg-black/60 text-white text-xs px-2.5 py-1 rounded-full backdrop-blur">
+            {current + 1} / {sorted.length}
+          </div>
         </div>
         {sorted.length > 1 && (
           <>
-            <button onClick={(e) => { e.stopPropagation(); prev(); }}
-              className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 bg-white/80 backdrop-blur rounded-full flex items-center justify-center hover:bg-white transition opacity-0 group-hover:opacity-100 shadow">
-              <ChevronLeft size={18} className="text-slate-700" />
+            <button onClick={prev}
+              className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-white/90 rounded-full flex items-center justify-center shadow">
+              <ChevronLeft size={16} className="text-slate-700" />
             </button>
-            <button onClick={(e) => { e.stopPropagation(); next(); }}
-              className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 bg-white/80 backdrop-blur rounded-full flex items-center justify-center hover:bg-white transition opacity-0 group-hover:opacity-100 shadow">
-              <ChevronRight size={18} className="text-slate-700" />
+            <button onClick={next}
+              className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-white/90 rounded-full flex items-center justify-center shadow">
+              <ChevronRight size={16} className="text-slate-700" />
             </button>
           </>
         )}
       </div>
-      {sorted.length > 1 && (
-        <div className="flex gap-2 overflow-x-auto pb-1 mb-6 scrollbar-hide">
-          {sorted.map((url, i) => (
-            <button key={url} onClick={() => setCurrent(i)}
-              className={`flex-shrink-0 w-16 h-16 rounded-xl overflow-hidden border-2 transition ${
-                i === current ? "border-brand-500 shadow-sm" : "border-transparent opacity-70 hover:opacity-100"
-              }`}>
-              <img src={url} alt="" className="w-full h-full object-cover" />
-            </button>
+
+      {/* ── Desktop: mosaico estilo Airbnb (1 grande + 4 pequenas) ── */}
+      <div className="hidden sm:block relative mb-6">
+        <div className="grid grid-cols-4 grid-rows-2 gap-2 rounded-3xl overflow-hidden aspect-[2/1]">
+          <div className="col-span-2 row-span-2 relative cursor-pointer group overflow-hidden" onClick={() => setShowAll(true)}>
+            <img src={sorted[0]} alt={`${name} - foto principal`}
+              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition" />
+          </div>
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="relative cursor-pointer group overflow-hidden" onClick={() => setShowAll(true)}>
+              {sorted[i] ? (
+                <>
+                  <img src={sorted[i]} alt={`${name} - foto ${i + 1}`}
+                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition" />
+                </>
+              ) : (
+                <div className="w-full h-full bg-slate-100" />
+              )}
+            </div>
           ))}
         </div>
+        <button onClick={() => setShowAll(true)}
+          className="absolute bottom-4 right-4 flex items-center gap-2 bg-white border border-slate-900 text-slate-900 text-sm font-semibold px-4 py-2 rounded-lg shadow hover:bg-slate-50 transition">
+          <LayoutGrid size={15} />
+          Mostrar todas as fotos
+        </button>
+      </div>
+
+      {/* ── Modal: todas as fotos (grade rolável, estilo Airbnb) ── */}
+      {showAll && (
+        <div className="fixed inset-0 bg-white z-50 overflow-y-auto">
+          <div className="sticky top-0 bg-white/95 backdrop-blur z-10 flex items-center justify-between px-4 py-3 border-b border-slate-100">
+            <button onClick={() => setShowAll(false)}
+              className="flex items-center gap-1.5 text-slate-700 hover:text-slate-900 text-sm font-medium">
+              <ChevronLeft size={18} /> Voltar
+            </button>
+            <span className="text-sm text-slate-500">{sorted.length} fotos</span>
+          </div>
+          <div className="max-w-3xl mx-auto px-4 py-6 grid grid-cols-1 md:grid-cols-2 gap-2">
+            {sorted.map((url, i) => (
+              <img key={url + i} src={url} alt={`${name} - foto ${i + 1}`}
+                onClick={() => setLightbox(i)}
+                className={`w-full object-cover rounded-xl cursor-pointer hover:opacity-95 transition ${i % 3 === 0 ? "md:col-span-2 aspect-[2/1]" : "aspect-[4/3]"}`}
+                loading="lazy" />
+            ))}
+          </div>
+        </div>
       )}
-      {lightbox && (
-        <div className="fixed inset-0 bg-black/95 z-50 flex items-center justify-center p-4" onClick={() => setLightbox(false)}>
-          <button onClick={() => setLightbox(false)} className="absolute top-4 right-4 text-white/70 hover:text-white">
+
+      {/* ── Lightbox ── */}
+      {lightbox !== null && (
+        <div className="fixed inset-0 bg-black/95 z-[60] flex items-center justify-center p-4" onClick={() => setLightbox(null)}>
+          <button onClick={() => setLightbox(null)} className="absolute top-4 right-4 text-white/70 hover:text-white">
             <X size={28} />
           </button>
           {sorted.length > 1 && (
             <>
-              <button onClick={(e) => { e.stopPropagation(); prev(); }}
+              <button onClick={(e) => { e.stopPropagation(); lbPrev(); }}
                 className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/20 rounded-full flex items-center justify-center hover:bg-white/40 transition text-white">
                 <ChevronLeft size={20} />
               </button>
-              <button onClick={(e) => { e.stopPropagation(); next(); }}
+              <button onClick={(e) => { e.stopPropagation(); lbNext(); }}
                 className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/20 rounded-full flex items-center justify-center hover:bg-white/40 transition text-white">
                 <ChevronRight size={20} />
               </button>
             </>
           )}
-          <img src={sorted[current]} alt="" className="max-w-full max-h-[85vh] object-contain rounded-xl"
+          <img src={sorted[lightbox]} alt="" className="max-w-full max-h-[85vh] object-contain rounded-xl"
             onClick={e => e.stopPropagation()} />
           <p className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/60 text-sm">
-            {current + 1} / {sorted.length}
+            {lightbox + 1} / {sorted.length}
           </p>
         </div>
       )}
@@ -594,19 +638,27 @@ export default function PropertyDetailPage() {
         <ChevronLeft size={16} /> Voltar
       </button>
 
+      {/* ── Cabeçalho estilo Airbnb: título acima da galeria ── */}
+      <h1 className="text-2xl md:text-3xl font-bold text-slate-900 mb-1">{property.name}</h1>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-slate-600 mb-4 text-sm">
+        <span className="flex items-center gap-1 font-medium text-slate-900">
+          <Star size={13} fill="currentColor" /> 5,0
+        </span>
+        <span className="text-slate-300">·</span>
+        <span className="underline">Avaliações no Airbnb</span>
+        <span className="text-slate-300">·</span>
+        <span className="flex items-center gap-1"><MapPin size={13} /> {property.address}, {property.city} — {property.state}</span>
+      </div>
+
+      <PhotoGallery
+        photos={parseJSON((property as any).photos ?? "[]")}
+        coverPhoto={(property as any).coverPhoto}
+        name={property.name}
+      />
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left: property details */}
         <div className="lg:col-span-2">
-          <PhotoGallery
-            photos={parseJSON((property as any).photos ?? "[]")}
-            coverPhoto={(property as any).coverPhoto}
-            name={property.name}
-          />
-
-          <h1 className="text-2xl font-bold text-slate-900 mb-1">{property.name}</h1>
-          <div className="flex items-center gap-1.5 text-slate-500 mb-5">
-            <MapPin size={14} /> {property.address}, {property.city} — {property.state}
-          </div>
 
           <div className="flex gap-4 mb-6">
             <div className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 rounded-xl text-sm font-medium text-slate-700">
