@@ -351,6 +351,9 @@ export default function PagarPage() {
   const [pixData, setPixData] = useState<PixData | null>(null);
   const [generatingPix, setGeneratingPix] = useState(false);
   const [pixError, setPixError] = useState("");
+  // CPF do pagador: exigido pelo banco e guardado na reserva depois de informado
+  const [cpfPix, setCpfPix] = useState("");
+  const [pedindoCpf, setPedindoCpf] = useState(false);
 
   // Card submit state
   const [cardSubmitting, setCardSubmitting] = useState(false);
@@ -380,6 +383,8 @@ export default function PagarPage() {
       .then(d => {
         if (d.error) { setError(d.error); return; }
         setReservation(d.reservation);
+        // Já informou o CPF antes: não faz o hóspede digitar de novo
+        if (d.reservation.guestCpf) setCpfPix(formatarCpf(d.reservation.guestCpf));
         if (d.reservation.installmentPlan) {
           setPayMode("installment");
           setPlanCreated(true);
@@ -459,14 +464,29 @@ export default function PagarPage() {
       const res = await fetch("/api/public/payments/pagbank-pix", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: reservation.code }),
+        body: JSON.stringify({ code: reservation.code, cpf: cpfPix }),
       });
       const data = await res.json();
-      if (!res.ok) { setPixError(data.error || "Erro ao gerar PIX"); return; }
+      if (!res.ok) {
+        // O banco exige CPF do pagador; sem ele nem chega a gerar a cobrança
+        if (data.precisaCpf) setPedindoCpf(true);
+        setPixError(data.error || "Erro ao gerar PIX");
+        return;
+      }
+      setPedindoCpf(false);
       setPixData({ chargeId: data.chargeId, pixText: data.pixText, pixImageLink: data.pixImageLink, expiresAt: data.expiresAt });
     } finally {
       setGeneratingPix(false);
     }
+  }
+
+  /** Formata enquanto digita: 123.456.789-01 */
+  function formatarCpf(valor: string) {
+    const d = valor.replace(/\D/g, "").slice(0, 11);
+    return d
+      .replace(/^(\d{3})(\d)/, "$1.$2")
+      .replace(/^(\d{3})\.(\d{3})(\d)/, "$1.$2.$3")
+      .replace(/\.(\d{3})(\d{1,2})$/, ".$1-$2");
   }
 
   async function handleCardSubmit(cardData: { encryptedCard: string; holderName: string; holderCpf: string; installments: number }) {
@@ -744,9 +764,27 @@ export default function PagarPage() {
                     <QrCode size={40} className="text-brand-400 mx-auto mb-3" />
                     <p className="text-sm font-semibold text-slate-700 mb-1">Pague com PIX</p>
                     <p className="text-xs text-slate-400 mb-4">Geração instantânea · Confirmação em até 1 min</p>
+
+                    <div className="text-left mb-4">
+                      <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                        CPF do pagador
+                        <span className="ml-1.5 font-normal text-slate-400">exigido pelo banco</span>
+                      </label>
+                      <input
+                        inputMode="numeric"
+                        autoComplete="off"
+                        value={cpfPix}
+                        onChange={e => setCpfPix(formatarCpf(e.target.value))}
+                        placeholder="000.000.000-00"
+                        className={`w-full border rounded-xl px-3 py-2.5 text-sm font-mono tracking-wide focus:outline-none focus:ring-2 focus:ring-brand-400 ${
+                          pedindoCpf ? "border-red-300 bg-red-50" : "border-slate-200"
+                        }`}
+                      />
+                    </div>
+
                     <button
                       onClick={handleGeneratePix}
-                      disabled={generatingPix}
+                      disabled={generatingPix || cpfPix.replace(/\D/g, "").length !== 11}
                       className="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white font-bold py-3.5 rounded-2xl flex items-center justify-center gap-2 transition-colors shadow-lg shadow-brand-500/20"
                     >
                       {generatingPix ? <Loader2 size={18} className="animate-spin" /> : <QrCode size={18} />}
