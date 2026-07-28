@@ -480,6 +480,33 @@ export default function PagarPage() {
     }
   }
 
+  /**
+   * Cartão vai pelo Pagar.me: criamos o link e mandamos o hóspede para lá.
+   * Os dados do cartão não passam por este site.
+   */
+  async function handleCardCheckout() {
+    if (!reservation) return;
+    setCardSubmitting(true);
+    setCardError("");
+    try {
+      const res = await fetch("/api/public/payments/pagarme-checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: reservation.code, cpf: cpfPix }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.paymentUrl) {
+        setCardError(data.error || "Nao foi possivel abrir o pagamento");
+        return;
+      }
+      window.location.href = data.paymentUrl;
+    } catch {
+      setCardError("Falha de conexao. Tente de novo.");
+    } finally {
+      setCardSubmitting(false);
+    }
+  }
+
   /** Formata enquanto digita: 123.456.789-01 */
   function formatarCpf(valor: string) {
     const d = valor.replace(/\D/g, "").slice(0, 11);
@@ -811,19 +838,33 @@ export default function PagarPage() {
                       {cardError}
                     </div>
                   )}
-                  {!publicKey ? (
-                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-center text-xs text-amber-700">
-                      <AlertTriangle size={16} className="mx-auto mb-2 text-amber-500" />
-                      Gateway de pagamento não configurado. Entre em contato com a administração.
-                    </div>
-                  ) : (
-                    <CardForm
-                      amount={Number(reservation.totalAmount)}
-                      publicKey={publicKey}
-                      onSuccess={handleCardSubmit}
-                      label={`Pagar ${fmt(Number(reservation.totalAmount))}`}
+                  <p className="text-xs text-slate-500 mb-4">
+                    Você será levado ao ambiente seguro do Pagar.me para informar
+                    os dados do cartão. Parcelamento em até 6x sem juros.
+                  </p>
+
+                  <div className="text-left mb-4">
+                    <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                      CPF do pagador
+                    </label>
+                    <input
+                      inputMode="numeric"
+                      autoComplete="off"
+                      value={cpfPix}
+                      onChange={e => setCpfPix(formatarCpf(e.target.value))}
+                      placeholder="000.000.000-00"
+                      className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-mono tracking-wide focus:outline-none focus:ring-2 focus:ring-brand-400"
                     />
-                  )}
+                  </div>
+
+                  <button
+                    onClick={handleCardCheckout}
+                    disabled={cardSubmitting || cpfPix.replace(/\D/g, "").length !== 11}
+                    className="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white font-bold py-3.5 rounded-2xl flex items-center justify-center gap-2 transition-colors shadow-lg shadow-brand-500/20"
+                  >
+                    {cardSubmitting ? <Loader2 size={18} className="animate-spin" /> : <CreditCard size={18} />}
+                    {cardSubmitting ? "Abrindo pagamento..." : `Pagar ${fmt(Number(reservation.totalAmount))} no cartão`}
+                  </button>
                 </div>
               )}
 
