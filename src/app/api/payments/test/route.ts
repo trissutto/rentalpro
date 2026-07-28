@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { limparToken } from "@/lib/pagbank";
 import { getAuthUser } from "@/lib/auth";
 
 const PB_API = "https://api.pagseguro.com";
@@ -28,7 +29,7 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const token = rawToken.trim();
+  const token = limparToken(rawToken);
   const tokenInfo = {
     length: token.length,
     prefix: token.slice(0, 8) + "...",

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { limparToken } from "@/lib/pagbank";
 import { sendMail, pixEmailHtml } from "@/lib/email";
 
 const PB_API = "https://api.pagseguro.com";
@@ -25,7 +26,7 @@ export async function POST(req: NextRequest) {
     if (!tokenSetting?.value) {
       return NextResponse.json({ error: "Gateway de pagamento nao configurado" }, { status: 400 });
     }
-    const token = tokenSetting.value.trim();
+    const token = limparToken(tokenSetting.value);
 
     const reqUrl = new URL(req.url);
     const isLocalhost = reqUrl.hostname === "localhost" || reqUrl.hostname === "127.0.0.1";

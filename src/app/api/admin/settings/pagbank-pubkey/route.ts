@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { limparToken } from "@/lib/pagbank";
 import { getAuthUser } from "@/lib/auth";
 
 /**
@@ -15,7 +16,7 @@ export async function POST(req: NextRequest) {
 
   // Carrega o token salvo
   const setting = await prisma.setting.findUnique({ where: { key: "pagbank_token" } });
-  const token = setting?.value?.trim();
+  const token = setting?.value ? limparToken(setting.value) : undefined;
   if (!token) {
     return NextResponse.json({ error: "Token PagBank não configurado. Salve o token primeiro." }, { status: 400 });
   }
