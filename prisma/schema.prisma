@@ -102,6 +102,8 @@ model Reservation {
   guestName   String
   guestEmail  String?
   guestPhone  String?
+  // Pedido na hora do pagamento: o PagBank recusa cobrança sem CPF do pagador
+  guestCpf    String?
   guestCount  Int      @default(1)
   checkIn     DateTime
   checkOut    DateTime

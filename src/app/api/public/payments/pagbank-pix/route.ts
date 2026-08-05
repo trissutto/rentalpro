@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { limparToken, montarCustomer, cpfValido } from "@/lib/pagbank";
 import { sendMail, pixEmailHtml } from "@/lib/email";
 
 const PB_API = "https://api.pagseguro.com";
@@ -7,11 +8,11 @@ const PB_API = "https://api.pagseguro.com";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { code } = body;
+    const { code, cpf } = body as { code?: string; cpf?: string };
     if (!code) return NextResponse.json({ error: "Codigo da reserva obrigatorio" }, { status: 400 });
 
     // Load reservation
-    const reservation = await prisma.reservation.findUnique({
+    let reservation = await prisma.reservation.findUnique({
       where: { code: String(code).toUpperCase() },
       include: { property: { select: { name: true } } },
     });
@@ -20,12 +21,39 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Esta reserva ja foi paga" }, { status: 409 });
     }
 
+    // O PagBank recusa a cobrança sem CPF do pagador. Se a reserva ainda não
+    // tem, o hóspede informa na hora de gerar o PIX e guardamos — assim ele só
+    // digita uma vez, e o CPF fica na reserva para nota e conferência.
+    const cpfInformado = (cpf ?? "").replace(/\D/g, "");
+    const cpfSalvo = (reservation.guestCpf ?? "").replace(/\D/g, "");
+
+    if (!cpfSalvo && !cpfInformado) {
+      return NextResponse.json(
+        { error: "CPF obrigatorio", precisaCpf: true },
+        { status: 400 }
+      );
+    }
+
+    if (cpfInformado && cpfInformado !== cpfSalvo) {
+      if (!cpfValido(cpfInformado)) {
+        return NextResponse.json(
+          { error: "CPF invalido. Confira os numeros.", precisaCpf: true },
+          { status: 400 }
+        );
+      }
+      reservation = await prisma.reservation.update({
+        where: { id: reservation.id },
+        data: { guestCpf: cpfInformado },
+        include: { property: { select: { name: true } } },
+      });
+    }
+
     // Get PagBank token
     const tokenSetting = await prisma.setting.findUnique({ where: { key: "pagbank_token" } });
     if (!tokenSetting?.value) {
       return NextResponse.json({ error: "Gateway de pagamento nao configurado" }, { status: 400 });
     }
-    const token = tokenSetting.value.trim();
+    const token = limparToken(tokenSetting.value);
 
     const reqUrl = new URL(req.url);
     const isLocalhost = reqUrl.hostname === "localhost" || reqUrl.hostname === "127.0.0.1";
@@ -36,10 +64,7 @@ export async function POST(req: NextRequest) {
     // PagBank PIX uses /orders with qr_codes (NOT /charges with payment_method)
     const payload: Record<string, unknown> = {
       reference_id: reservation.code,
-      customer: {
-        name: reservation.guestName || "Hospede",
-        email: reservation.guestEmail || "guest@reserva.com",
-      },
+      customer: montarCustomer(reservation),
       items: [
         {
           reference_id: reservation.code,

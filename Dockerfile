@@ -19,6 +19,12 @@ ENV NODE_ENV production
 # Banco usado apenas durante o build; em producao vem do volume via DATABASE_URL
 ENV DATABASE_URL "file:./dev.db"
 
+# `next build` importa o modulo de autenticacao, que agora se recusa a carregar
+# sem JWT_SECRET. Este valor existe SO durante o build: ARG (ao contrario de
+# ENV) nao fica na imagem, entao em producao vale a variavel real do Railway e
+# a aplicacao continua se recusando a subir sem ela.
+ARG JWT_SECRET="valor-de-build-sem-efeito-em-runtime"
+
 # Gerar o cliente Prisma
 RUN npx prisma generate
 
@@ -56,12 +62,18 @@ RUN chown nextjs:nodejs .next
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 # Copia apenas o schema (NUNCA o dev.db — banco fica no volume)
-COPY --from=builder --chown=nextjs:nodejs /app/prisma/schema.prisma ./prisma/schema.prisma
+# O schema vai para FORA de /app/prisma: aquele diretório é o ponto de montagem
+# do volume, e o mount esconde qualquer arquivo que a imagem tenha deixado lá.
+COPY --from=builder --chown=nextjs:nodejs /app/prisma/schema.prisma ./prisma-schema/schema.prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
 # CLI do Prisma: o entrypoint roda `db push` no boot para criar as tabelas
 # quando o volume ainda está vazio (primeira subida no Railway)
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/prisma ./node_modules/prisma
+# sharp é binário nativo (compressão das fotos). Copiado explicitamente porque
+# o rastreio do standalone nem sempre leva os .node das dependências opcionais.
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/sharp ./node_modules/sharp
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@img ./node_modules/@img
 
 COPY --chown=nextjs:nodejs docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x ./docker-entrypoint.sh

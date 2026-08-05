@@ -84,8 +84,11 @@ export async function GET(
 
   // Reservations → VEVENT
   for (const res of reservations) {
-    const uid     = `res-${res.id}@rentalpro`;
-    const summary = `Reservado — ${res.guestName ?? "Hóspede"}`;
+    const uid = `res-${res.id}@rentalpro`;
+    // Sem o nome do hóspede de propósito: este endereço é público e o id do
+    // imóvel aparece na URL das fotos, então qualquer um poderia listar quem
+    // se hospeda e quando. Airbnb e Booking só precisam das datas ocupadas.
+    const summary = "Reservado";
     const dtstart = toIcalDate(res.checkIn);
     const dtend   = toIcalDate(res.checkOut);
 

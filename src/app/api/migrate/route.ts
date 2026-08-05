@@ -1,13 +1,20 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { checkCronSecret } from "@/lib/cron-auth";
 
 /**
- * GET /api/migrate
- * Adds missing columns to SQLite without needing `npx prisma db push`.
- * Safe to call multiple times — each ALTER TABLE is idempotent.
- * No auth required: only ever ADDS columns, never deletes data.
+ * GET /api/migrate?secret=XXX
+ * Adiciona colunas que faltam no SQLite sem precisar de `npx prisma db push`.
+ * Pode ser chamada mais de uma vez — cada ALTER TABLE é idempotente.
+ *
+ * Passou a exigir segredo: estava aberta na internet. Mesmo só adicionando
+ * colunas, deixava qualquer um disparar alteração de schema à vontade e ainda
+ * devolvia a estrutura do banco na resposta.
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const denied = checkCronSecret(new URL(req.url).searchParams.get("secret"));
+  if (denied) return denied;
+
   const results: string[] = [];
 
   async function addCol(sql: string, label: string) {

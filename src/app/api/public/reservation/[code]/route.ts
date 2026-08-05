@@ -41,6 +41,7 @@ export async function GET(
       guestName: reservation.guestName,
       guestEmail: reservation.guestEmail,
       guestPhone: reservation.guestPhone,
+      guestCpf: reservation.guestCpf,
       guestCount: reservation.guestCount,
       checkIn: reservation.checkIn,
       checkOut: reservation.checkOut,

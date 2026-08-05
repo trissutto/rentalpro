@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { limparToken } from "@/lib/pagbank";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +18,7 @@ export async function GET() {
 
     // 2. Not cached — fetch from PagBank using the saved token
     const tokenSetting = await prisma.setting.findUnique({ where: { key: "pagbank_token" } });
-    const token = tokenSetting?.value?.trim();
+    const token = tokenSetting?.value ? limparToken(tokenSetting.value) : undefined;
     if (!token) {
       return NextResponse.json({ publicKey: null });
     }

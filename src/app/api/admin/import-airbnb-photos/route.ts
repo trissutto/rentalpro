@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { checkCronSecret } from "@/lib/cron-auth";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
+import { otimizarImagem } from "@/lib/image";
 
 export const maxDuration = 300;
 
@@ -90,8 +91,13 @@ export async function GET(req: NextRequest) {
         const res = await fetch(foto, { signal: AbortSignal.timeout(20_000) });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-        const buffer   = Buffer.from(await res.arrayBuffer());
-        const filename = `airbnb-${Date.now()}-${Math.random().toString(36).slice(2)}.${extDaUrl(foto)}`;
+        const original = Buffer.from(await res.arrayBuffer());
+        const ext      = extDaUrl(foto);
+
+        // As fotos do Airbnb vêm em resolução original — recomprime na entrada
+        const { buffer } = await otimizarImagem(original, ext);
+
+        const filename = `airbnb-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
         await writeFile(path.join(dir, filename), buffer);
 
         novas.push(`/api/files/${prop.id}/${filename}`);

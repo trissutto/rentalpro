@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { limparToken } from "@/lib/pagbank";
 
 const PB_API = "https://api.pagseguro.com";
 
@@ -31,7 +32,7 @@ export async function POST(req: NextRequest) {
 
     // Fetch charge from PagBank to get the latest status
     const pbRes = await fetch(`${PB_API}/charges/${chargeId}`, {
-      headers: { "Authorization": `Bearer ${tokenSetting.value.trim()}` },
+      headers: { "Authorization": `Bearer ${limparToken(tokenSetting.value)}` },
     });
     if (!pbRes.ok) {
       console.error("PagBank webhook: could not fetch charge", chargeId);

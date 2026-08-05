@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth";
 import { writeFile, mkdir, unlink, readdir } from "fs/promises";
+import { otimizarImagem } from "@/lib/image";
 import path from "path";
 import { prisma } from "@/lib/prisma";
 
@@ -46,7 +47,8 @@ export async function POST(req: NextRequest) {
     if (!allowed.includes(ext)) return NextResponse.json({ error: "Formato não suportado" }, { status: 400 });
 
     const filename = `hero-${Date.now()}.${ext}`;
-    const buffer   = Buffer.from(await file.arrayBuffer());
+    const original = Buffer.from(await file.arrayBuffer());
+    const { buffer } = await otimizarImagem(original, ext);
     await writeFile(path.join(HERO_DIR, filename), buffer);
 
     const url = `/api/files/hero/${filename}`;
