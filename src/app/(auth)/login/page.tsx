@@ -111,15 +111,6 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {/* Demo credentials */}
-          <div className="mt-6 p-4 bg-slate-50 rounded-2xl">
-            <p className="text-xs font-semibold text-slate-500 mb-2">CREDENCIAIS DE DEMO</p>
-            <div className="space-y-1 text-xs text-slate-600">
-              <p>🔑 Admin: <span className="font-mono">admin@rental.com / admin123</span></p>
-              <p>👷 Equipe: <span className="font-mono">equipe@rental.com / team123</span></p>
-              <p>🏠 Dono: <span className="font-mono">proprietario@rental.com / owner123</span></p>
-            </div>
-          </div>
         </div>
       </motion.div>
     </div>
