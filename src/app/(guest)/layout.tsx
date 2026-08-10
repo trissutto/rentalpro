@@ -16,7 +16,7 @@ export default function GuestLayout({ children }: { children: React.ReactNode })
             <div className="w-8 h-8 bg-gradient-to-br from-brand-500 to-brand-700 rounded-xl flex items-center justify-center shadow-md shadow-brand-200">
               <Home className="w-4 h-4 text-white" />
             </div>
-            <span className="font-bold text-slate-900 text-lg tracking-tight">Reservas Ita 🟢</span>
+            <span className="font-bold text-slate-900 text-lg tracking-tight">Reservas Ita</span>
           </Link>
           <Link
             href="/imoveis"
