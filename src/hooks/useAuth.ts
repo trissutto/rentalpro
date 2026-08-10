@@ -51,7 +51,7 @@ export const useAuthStore = create<AuthState>()(
 // API helper with auth
 export async function apiRequest(url: string, options: RequestInit = {}) {
   const token = localStorage.getItem("token");
-  return fetch(url, {
+  const res = await fetch(url, {
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -59,4 +59,6 @@ export async function apiRequest(url: string, options: RequestInit = {}) {
       ...options.headers,
     },
   });
+  if (res.status === 401 && typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) { useAuthStore.getState().logout(); window.location.href = "/login"; }
+  return res;
 }
