@@ -259,7 +259,7 @@ export default function PropertiesPage() {
     try {
       const res = await apiRequest("/api/properties");
       const data = await res.json();
-      setProperties(data.properties);
+      setProperties(data.properties ?? []);
     } finally {
       setLoading(false);
     }
