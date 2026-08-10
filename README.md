@@ -64,16 +64,6 @@ Acesse: **http://localhost:3000**
 
 ---
 
-## 👤 Credenciais de Demo
-
-| Perfil | Email | Senha | Acesso |
-|--------|-------|-------|--------|
-| Admin | admin@rental.com | admin123 | Total |
-| Equipe | equipe@rental.com | team123 | Operacional |
-| Proprietário | proprietario@rental.com | owner123 | Visualização |
-
----
-
 ## 📦 Deploy em Produção
 
 ### Opção A: Vercel + Supabase (Recomendado)
