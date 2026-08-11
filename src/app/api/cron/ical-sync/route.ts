@@ -13,7 +13,7 @@ import { checkCronSecret } from "@/lib/cron-auth";
  *   curl "http://localhost:3000/api/cron/ical-sync?secret=<CRON_SECRET>"
  */
 export async function GET(req: NextRequest) {
-  const denied = checkCronSecret(new URL(req.url).searchParams.get("secret"));
+  const denied = checkCronSecret(new URL(req.url).searchParams.get("secret") ?? req.headers.get("x-cron-secret"));
   if (denied) return denied;
 
   const startedAt = Date.now();
