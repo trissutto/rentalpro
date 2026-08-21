@@ -1,26 +1,26 @@
 {
-  "name": "RentalPro — Gestão de Imóveis",
-  "short_name": "RentalPro",
-  "description": "Sistema de gestão de imóveis para locação por temporada",
+  "name": "Reservas Ita — Casas de Temporada em Itanhaém",
+  "short_name": "Reservas Ita",
+  "description": "Central de reservas das casas de alto padrão em Itanhaém, litoral sul de São Paulo.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#0f80e7",
+  "background_color": "#0a0a0a",
+  "theme_color": "#c9a84c",
   "orientation": "portrait",
   "icons": [
     {
       "src": "/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     }
   ],
-  "categories": ["business", "productivity"],
+  "categories": ["travel", "business"],
   "screenshots": []
 }

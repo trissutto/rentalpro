@@ -8,6 +8,6 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - name: Chamar sincronizacao do RentalPro
+      - name: Chamar sincronizacao do Reservas Ita
         run: |
                   curl -sS --fail -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" https://reservasita.com.br/api/cron/ical-sync

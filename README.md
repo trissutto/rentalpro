@@ -1,4 +1,4 @@
-# 🏠 RentalPro — Sistema de Gestão de Imóveis por Temporada
+# 🌴 Reservas Ita — Sistema de Gestão de Casas por Temporada
 
 Sistema completo de administração interna para locação por temporada. Mobile-first, PWA instalável, com automações, financeiro e integração WhatsApp.
 

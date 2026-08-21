@@ -1,7 +1,7 @@
 {
   "name": "rental-system",
   "version": "1.0.5",
-  "description": "Sistema de Gestão de Imóveis para Locação por Temporada",
+  "description": "Reservas Ita — central de reservas das casas de temporada em Itanhaém",
   "private": true,
   "scripts": {
     "dev": "next dev -H 0.0.0.0",

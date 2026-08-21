@@ -56,7 +56,7 @@ export async function syncIcalUrl(
 ): Promise<{ created: number; deleted: number; source: string }> {
 
   const res = await fetch(url, {
-    headers: { "User-Agent": "RentalPro-Sync/1.0" },
+    headers: { "User-Agent": "ReservasIta-Sync/1.0" },
     signal: AbortSignal.timeout(15_000),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status} ao buscar ${url}`);
