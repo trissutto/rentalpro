@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { authorizeGuestRequest, PRIVATE_GUEST_HEADERS } from "@/lib/guest-access";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: { code: string } }
 ) {
+  const denied = await authorizeGuestRequest(req, params.code, "contract:read");
+  if (denied) return denied;
   try {
     // ── 1. Core reservation + property (only original schema fields) ──────────
     const reservation = await prisma.reservation.findUnique({
@@ -21,7 +24,6 @@ export async function GET(
         nights: true,
         totalAmount: true,
         cleaningFee: true,
-        notes: true,
         createdAt: true,
         property: {
           select: {
@@ -37,7 +39,7 @@ export async function GET(
     });
 
     if (!reservation) {
-      return NextResponse.json({ error: "Reserva não encontrada" }, { status: 404 });
+      return NextResponse.json({ error: "Reserva não encontrada" }, { status: 404, headers: PRIVATE_GUEST_HEADERS });
     }
 
     // ── 2. Rooms + items (separate query — resilient to schema changes) ────────
@@ -109,7 +111,6 @@ export async function GET(
         nights: reservation.nights,
         totalAmount: reservation.totalAmount,
         cleaningFee: reservation.cleaningFee,
-        notes: reservation.notes,
         createdAt: reservation.createdAt,
       },
       property: {
@@ -123,10 +124,9 @@ export async function GET(
       },
       guests,
       checklist,
-    });
+    }, { headers: PRIVATE_GUEST_HEADERS });
   } catch (err) {
     console.error("contract-data error:", err);
-    const msg = err instanceof Error ? err.message : "Erro ao carregar contrato";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return NextResponse.json({ error: "Erro ao carregar contrato" }, { status: 500, headers: PRIVATE_GUEST_HEADERS });
   }
 }

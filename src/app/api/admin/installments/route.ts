@@ -5,20 +5,16 @@ import { getAuthUser } from "@/lib/auth";
 export async function GET(req: NextRequest) {
   const user = await getAuthUser(req);
   if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+  if (!["ADMIN", "TEAM", "OWNER"].includes(user.role)) return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
 
   try {
-    // Busca todas as reservas com plano de parcelamento via raw SQL
-    const rows = await (prisma as any).$queryRawUnsafe(`
-      SELECT
-        r.id, r.code, r.guestName, r.guestPhone, r.guestEmail,
-        r.checkIn, r.checkOut, r.nights, r.totalAmount,
-        r.paymentStatus, r.status, r.installmentData,
-        p.name as propertyName, p.id as propertyId
-      FROM reservations r
-      JOIN properties p ON r.propertyId = p.id
-      WHERE r.installmentData IS NOT NULL AND r.installmentData != ''
-      ORDER BY r.createdAt DESC
-    `) as any[];
+    const rows = await prisma.reservation.findMany({
+      where: { installmentData: { not: null }, ...(user.role === "OWNER" ? { property: { ownerId: user.id } } : {}) },
+      select: { id: true, code: true, guestName: true, guestPhone: true, guestEmail: true, checkIn: true, checkOut: true,
+        nights: true, totalAmount: true, paymentStatus: true, status: true, installmentData: true,
+        property: { select: { id: true, name: true } } },
+      orderBy: { createdAt: "desc" },
+    });
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -47,7 +43,7 @@ export async function GET(req: NextRequest) {
         const overdueAmount = overdueItems.reduce((s: number, i: any) => s + Number(i.amount), 0);
 
         // Health: ok | due_soon | overdue
-        const health = overdueItems.length > 0 ? "overdue"
+        const health = r.paymentStatus === "REVIEW" || r.status === "PAYMENT_REVIEW" ? "review" : overdueItems.length > 0 ? "overdue"
           : dueSoonItems.length > 0 ? "due_soon"
           : "ok";
 
@@ -62,8 +58,9 @@ export async function GET(req: NextRequest) {
           nights: r.nights,
           totalAmount: Number(r.totalAmount),
           reservationStatus: r.status,
-          propertyName: r.propertyName,
-          propertyId: r.propertyId,
+          paymentStatus: r.paymentStatus,
+          propertyName: r.property.name,
+          propertyId: r.property.id,
           plan: {
             numInstallments: plan.numInstallments,
             entryAmount: Number(plan.entryAmount),
@@ -95,12 +92,13 @@ export async function GET(req: NextRequest) {
       totalPlans: plans.length,
       totalOverdue: plans.filter((p: any) => p.stats.health === "overdue").length,
       totalDueSoon: plans.filter((p: any) => p.stats.health === "due_soon").length,
-      totalPaidAmount: plans.reduce((s: number, p: any) => s + p.stats.paidAmount, 0),
+      totalReview: plans.filter((p: any) => p.stats.health === "review").length,
+      totalPaidAmount: plans.filter((p: any) => p.stats.health !== "review").reduce((s: number, p: any) => s + p.stats.paidAmount, 0),
       totalPendingAmount: plans.reduce((s: number, p: any) => s + p.stats.pendingAmount, 0),
       totalOverdueAmount: plans.reduce((s: number, p: any) => s + p.stats.overdueAmount, 0),
     };
 
-    return NextResponse.json({ plans, summary });
+    return NextResponse.json({ plans, summary }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (err) {
     console.error("Installments API error:", err);
     return NextResponse.json({ error: "Erro interno" }, { status: 500 });

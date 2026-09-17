@@ -4,11 +4,14 @@ import { execSync } from "child_process";
 import { writeFileSync, readFileSync, unlinkSync, existsSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
+import { authorizeGuestRequest, PRIVATE_GUEST_HEADERS } from "@/lib/guest-access";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: { code: string } }
 ) {
+  const denied = await authorizeGuestRequest(req, params.code, "contract:read");
+  if (denied) return denied;
   try {
     const reservation = await prisma.reservation.findUnique({
       where: { code: params.code.toUpperCase() },
@@ -34,7 +37,7 @@ export async function GET(
     });
 
     if (!reservation) {
-      return NextResponse.json({ error: "Reserva não encontrada" }, { status: 404 });
+      return NextResponse.json({ error: "Reserva não encontrada" }, { status: 404, headers: PRIVATE_GUEST_HEADERS });
     }
 
     // Rooms — separate query with explicit select to avoid Prisma client issues
@@ -96,15 +99,16 @@ export async function GET(
       property: { ...reservation.property, checkInTime, checkOutTime, rooms },
       guests,
     });
-    return new NextResponse(pdf, {
+    return new NextResponse(new Uint8Array(pdf), {
       headers: {
+        ...PRIVATE_GUEST_HEADERS,
         "Content-Type": "application/pdf",
         "Content-Disposition": `inline; filename="contrato-${reservation.code}.pdf"`,
       },
     });
   } catch (err) {
     console.error("PDF generation error:", err);
-    return NextResponse.json({ error: "Erro ao gerar contrato PDF" }, { status: 500 });
+    return NextResponse.json({ error: "Erro ao gerar contrato PDF" }, { status: 500, headers: PRIVATE_GUEST_HEADERS });
   }
 }
 
@@ -399,7 +403,7 @@ story.append(Paragraph(
     body_s
 ))
 p2_data = [
-    [Paragraph('<b>Check-in</b>', small_bold), Paragraph('<b>Check-out</b>', small_bold), Paragraph('<b>Noites</b>', small_bold), Paragraph('<b>Hospedes</b>', small_bold)],
+    [Paragraph('<b>Check-in</b>', small_bold), Paragraph('<b>Check-out</b>', small_bold), Paragraph('<b>Diarias cobradas</b>', small_bold), Paragraph('<b>Hospedes</b>', small_bold)],
     ['${checkInDate} a partir das ${checkInTime}', '${checkOutDate} ate as ${checkOutTime}', '<b>${r.nights}</b>', '<b>${r.guestCount}</b>'],
 ]
 t2 = Table(p2_data, colWidths=[5*cm, 5*cm, 2.5*cm, 2.5*cm])
@@ -424,7 +428,7 @@ story.append(Paragraph(
 # ── 3. VALOR E PAGAMENTO ──────────────────────────────────────────────────────
 story.append(Paragraph('CLAUSULA 3 - DO VALOR E FORMA DE PAGAMENTO', sec_s))
 p3_data = [
-    ['Hospedagem (${r.nights} noite(s)):', Paragraph('<b>${fmtCur(accommodationAmount)}</b>', small_bold)],
+    ['Hospedagem (${r.nights} diarias cobradas):', Paragraph('<b>${fmtCur(accommodationAmount)}</b>', small_bold)],
     ['Taxa de limpeza:', Paragraph('<b>${fmtCur(Number(r.cleaningFee))}</b>', small_bold)],
     [Paragraph('<b>VALOR TOTAL:</b>', small_bold), Paragraph('<b>${fmtCur(Number(r.totalAmount))}</b>', ParagraphStyle('tb', parent=styles['Normal'], fontSize=12, fontName='Helvetica-Bold', textColor=brand))],
     ['Status do pagamento:', Paragraph('<b>${r.paymentStatus === "PAID" ? "PAGO" : "AGUARDANDO PAGAMENTO"}${r.paymentMethod ? " via " + r.paymentMethod.toUpperCase() : ""}</b>', small_bold)],

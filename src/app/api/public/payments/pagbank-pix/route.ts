@@ -1,3 +1,5 @@
+import { beginPaymentAttempt, savePaymentAttempt, reconcilePayment, PaymentError } from "@/lib/payment-integrity";
+import { authorizeGuestRequest } from "@/lib/guest-access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { limparToken, montarCustomer, cpfValido } from "@/lib/pagbank";
@@ -11,6 +13,8 @@ export async function POST(req: NextRequest) {
     const { code, cpf } = body as { code?: string; cpf?: string };
     if (!code) return NextResponse.json({ error: "Codigo da reserva obrigatorio" }, { status: 400 });
 
+    const denied = await authorizeGuestRequest(req, String(code), "payments:write");
+    if (denied) return denied;
     // Load reservation
     let reservation = await prisma.reservation.findUnique({
       where: { code: String(code).toUpperCase() },
@@ -59,7 +63,8 @@ export async function POST(req: NextRequest) {
     const isLocalhost = reqUrl.hostname === "localhost" || reqUrl.hostname === "127.0.0.1";
     const origin = process.env.NEXT_PUBLIC_BASE_URL || `${reqUrl.protocol}//${reqUrl.host}`;
 
-    const amountCents = Math.round(Number(reservation.totalAmount) * 100);
+    const attempt = await beginPaymentAttempt(reservation.id, "pagbank", "pix");
+    const amountCents = attempt.amountCents;
 
     // PagBank PIX uses /orders with qr_codes (NOT /charges with payment_method)
     const payload: Record<string, unknown> = {
@@ -76,6 +81,9 @@ export async function POST(req: NextRequest) {
       qr_codes: [
         {
           amount: { value: amountCents },
+          expiration_date: new Date(reservation.status === "PENDING" && ["PENDING", "FAILED"].includes(reservation.paymentStatus)
+            ? Math.min(new Date(reservation.createdAt).getTime() + 2 * 3600000, Date.now() + 2 * 3600000)
+            : Date.now() + 2 * 3600000).toISOString(),
         },
       ],
       ...(isLocalhost ? {} : {
@@ -88,14 +96,14 @@ export async function POST(req: NextRequest) {
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${token}`,
-        "x-idempotency-key": `${reservation.code}-pix-${Date.now()}`,
+        "x-idempotency-key": attempt.key,
       },
       body: JSON.stringify(payload),
     });
 
     const order = await pbRes.json();
     if (!pbRes.ok) {
-      console.error("PagBank PIX error:", JSON.stringify(order));
+      console.error("PagBank PIX error:", "Gateway rejeitou a solicitação");
       const errObj = order.error_messages?.[0];
       const msg = errObj
         ? `${errObj.description || "erro"} (${errObj.parameter_name || "unknown"})`
@@ -109,11 +117,8 @@ export async function POST(req: NextRequest) {
     const pixImageLink = qrCode?.links?.find((l: any) => l.media === "image/png")?.href ?? null;
     const expiresAt = qrCode?.expiration_date ?? null;
 
-    // Store order ID on reservation
-    await prisma.reservation.update({
-      where: { id: reservation.id },
-      data: { mpPaymentId: order.id, paymentMethod: "PIX" },
-    });
+    await savePaymentAttempt(reservation.id, attempt, order.id);
+    const { paymentStatus } = await reconcilePayment("pagbank", order.id);
 
     // Send PIX email
     if (reservation.guestEmail && pixText) {
@@ -132,7 +137,7 @@ export async function POST(req: NextRequest) {
             totalAmount: Number(reservation.totalAmount),
             reservationCode: reservation.code,
             pixCode: pixText,
-            pixQrBase64: null,
+            pixQrBase64: undefined,
             expiresAt,
           });
           await sendMail({
@@ -154,11 +159,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       chargeId: order.id,
       status: order.charges?.[0]?.status || "WAITING",
+      paymentStatus,
       pixText,
       pixImageLink,
       expiresAt,
     });
   } catch (err) {
+    if (err instanceof PaymentError) return NextResponse.json({ error: err.message }, { status: err.status });
     console.error("pagbank-pix error:", err);
     return NextResponse.json({ error: "Erro interno ao gerar PIX" }, { status: 500 });
   }

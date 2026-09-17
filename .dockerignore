@@ -21,4 +21,7 @@ yarn-error.log
 **/*.db-journal
 **/*.db-shm
 **/*.db-wal
+**/private-receipts/**
+**/legacy-receipts-before-audit/**
+public/uploads/receipts/**
 README.md

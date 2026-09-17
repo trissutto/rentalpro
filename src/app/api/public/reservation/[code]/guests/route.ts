@@ -1,52 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { authorizeGuestRequest, PRIVATE_GUEST_HEADERS, validateGuestInput } from "@/lib/guest-access";
 
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { code: string } }
-) {
+export async function GET(req: NextRequest, { params }: { params: { code: string } }) {
+  const denied = await authorizeGuestRequest(req, params.code);
+  if (denied) return denied;
   const reservation = await prisma.reservation.findUnique({
-    where: { code: params.code },
-    include: { guests: true },
+    where: { code: params.code.toUpperCase() },
+    select: { guestCount: true, guests: { select: { name: true, birthDate: true, docType: true, docNumber: true } } },
   });
-  if (!reservation) {
-    return NextResponse.json({ error: "Reserva não encontrada" }, { status: 404 });
-  }
-  return NextResponse.json({ guests: reservation.guests, guestCount: reservation.guestCount });
+  if (!reservation) return NextResponse.json({ error: "Reserva não encontrada" }, { status: 404, headers: PRIVATE_GUEST_HEADERS });
+  return NextResponse.json(reservation, { headers: PRIVATE_GUEST_HEADERS });
 }
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { code: string } }
-) {
-  const reservation = await prisma.reservation.findUnique({
-    where: { code: params.code },
-  });
-  if (!reservation) {
-    return NextResponse.json({ error: "Reserva não encontrada" }, { status: 404 });
+export async function POST(req: NextRequest, { params }: { params: { code: string } }) {
+  const denied = await authorizeGuestRequest(req, params.code, "guests:write");
+  if (denied) return denied;
+  let body;
+  try { body = await req.json(); } catch {
+    return NextResponse.json({ error: "Dados inválidos" }, { status: 400, headers: PRIVATE_GUEST_HEADERS });
   }
-
-  const body = await req.json();
-  const { guests } = body as {
-    guests: { name: string; birthDate: string; docType: string; docNumber: string }[];
-  };
-
-  if (!Array.isArray(guests) || guests.length === 0) {
-    return NextResponse.json({ error: "Informe os dados dos hóspedes" }, { status: 400 });
-  }
-
-  // Apaga hóspedes antigos e recria
-  await prisma.guest.deleteMany({ where: { reservationId: reservation.id } });
-
-  const created = await prisma.guest.createMany({
-    data: guests.map((g) => ({
-      reservationId: reservation.id,
-      name: g.name,
-      birthDate: new Date(g.birthDate),
-      docType: g.docType || "CPF",
-      docNumber: g.docNumber,
-    })),
+  return prisma.$transaction(async (tx) => {
+    const reservation = await tx.reservation.findUnique({ where: { code: params.code.toUpperCase() } });
+    if (!reservation) return NextResponse.json({ error: "Reserva não encontrada" }, { status: 404, headers: PRIVATE_GUEST_HEADERS });
+    if (!["PENDING", "CONFIRMED", "CHECKED_IN"].includes(reservation.status)) {
+      return NextResponse.json({ error: "Esta reserva não permite alterar hóspedes" }, { status: 409, headers: PRIVATE_GUEST_HEADERS });
+    }
+    const guests = validateGuestInput(body?.guests, reservation.guestCount);
+    if (!guests) return NextResponse.json({ error: "Informe hóspedes válidos, dentro da quantidade reservada, com nome, nascimento e documento" }, { status: 400, headers: PRIVATE_GUEST_HEADERS });
+    await tx.guest.deleteMany({ where: { reservationId: reservation.id } });
+    const created = await tx.guest.createMany({ data: guests.map((guest) => ({ ...guest, reservationId: reservation.id })) });
+    return NextResponse.json({ success: true, count: created.count }, { headers: PRIVATE_GUEST_HEADERS });
   });
-
-  return NextResponse.json({ success: true, count: created.count });
 }

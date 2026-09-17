@@ -1,5 +1,7 @@
 "use client";
 
+import { useGuestAccess } from "@/hooks/useGuestAccess";
+
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { Loader2, Printer, MessageCircle } from "lucide-react";
@@ -48,13 +50,14 @@ interface ContractData {
 }
 
 export default function ContratoPage() {
+  const { guestFetch, guestLink } = useGuestAccess();
   const { code } = useParams<{ code: string }>();
   const [data, setData] = useState<ContractData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    fetch(`/api/public/contract-data/${code}`)
+    guestFetch(`/api/public/contract-data/${code}`)
       .then(async r => {
         const d = await r.json();
         if (!r.ok || d.error) { setError(d.error || "Erro ao carregar contrato"); return; }
@@ -62,12 +65,12 @@ export default function ContratoPage() {
       })
       .catch(() => setError("Erro ao carregar contrato"))
       .finally(() => setLoading(false));
-  }, [code]);
+  }, [code, guestFetch]);
 
   function handleWhatsApp() {
     if (!data) return;
     const phone = data.reservation.guestPhone?.replace(/\D/g, "");
-    const url = `${window.location.origin}/contrato/${code}`;
+    const url = `${window.location.origin}${guestLink(`/contrato/${code}`)}`;
     const msg = encodeURIComponent(
       `Olá ${data.reservation.guestName}! 👋\n\nSegue o contrato da sua reserva na *${data.property.name}*.\n\n📄 Acesse pelo link:\n${url}\n\nCódigo da reserva: *${code}*\n\nQualquer dúvida estamos à disposição!`
     );
@@ -111,7 +114,7 @@ export default function ContratoPage() {
             <Printer size={15} /> Imprimir
           </button>
           <a
-            href={`/api/public/contract/${code}`}
+            href={guestLink(`/api/public/contract/${code}`)}
             target="_blank"
             rel="noreferrer"
             className="flex items-center gap-2 px-4 py-2 bg-slate-900 hover:bg-black text-white rounded-xl text-sm font-semibold transition"
@@ -244,7 +247,7 @@ export default function ContratoPage() {
               <div style={{ fontSize: 11, color: "#b91c1c", marginTop: 3 }}>até as 12h</div>
             </div>
             <div className="date-card nights">
-              <div className="dc-label">Noites</div>
+              <div className="dc-label">Diárias cobradas</div>
               <div className="dc-value">{res.nights}</div>
               <div style={{ fontSize: 11, color: "#0369a1", marginTop: 3 }}>{res.guestCount} hósp.</div>
             </div>
@@ -257,7 +260,7 @@ export default function ContratoPage() {
           <table className="financial-table">
             <tbody>
               <tr>
-                <td style={{ color: "#64748b" }}>Hospedagem ({res.nights} noite{res.nights > 1 ? "s" : ""})</td>
+                <td style={{ color: "#64748b" }}>Hospedagem ({res.nights} diárias cobradas)</td>
                 <td>{fmt(baseAmount)}</td>
               </tr>
               {Number(res.cleaningFee) > 0 && (

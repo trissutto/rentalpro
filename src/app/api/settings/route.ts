@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuthUser } from "@/lib/auth";
 
-const PUBLIC_KEYS = ["mp_public_key"];
+const INTERNAL_PREFIXES = ["payment-attempt:", "payment-receipt:", "payment-binding:"];
+const isInternalKey = (key: string) => INTERNAL_PREFIXES.some(prefix => key.startsWith(prefix));
 
 export async function GET(req: NextRequest) {
   const user = await getAuthUser(req);
@@ -13,6 +14,7 @@ export async function GET(req: NextRequest) {
   const settings = await prisma.setting.findMany();
   const map: Record<string, string> = {};
   for (const s of settings) {
+    if (isInternalKey(s.key)) continue;
     // Mask secret tokens in response
     if (s.key === "mp_access_token" && s.value) {
       map[s.key] = s.value.slice(0, 8) + "••••••••••••••••••••••••••••";
@@ -32,7 +34,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const { key, value } = body as { key: string; value: string };
 
-  if (!key || value === undefined) {
+  if (typeof key !== "string" || !key || typeof value !== "string" || isInternalKey(key)) {
     return NextResponse.json({ error: "key e value obrigatórios" }, { status: 400 });
   }
 

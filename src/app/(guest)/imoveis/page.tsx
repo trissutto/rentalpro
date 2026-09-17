@@ -288,7 +288,7 @@ export default function ImoveisPage() {
                             <div>
                               <span className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>a partir de</span>
                               <div className="font-bold text-lg" style={{ color: "#c9a84c" }}>
-                                {formatCurrency(p.basePrice)}<span className="text-xs font-normal text-white opacity-40">/noite</span>
+                                {formatCurrency(p.basePrice)}<span className="text-xs font-normal text-white opacity-40">/diária</span>
                               </div>
                             </div>
                             <div className="flex gap-3 text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>

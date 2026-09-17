@@ -1,6 +1,8 @@
+import { beginPaymentAttempt, savePaymentAttempt, reconcilePayment, PaymentError } from "@/lib/payment-integrity";
+import { authorizeGuestRequest } from "@/lib/guest-access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { limparToken } from "@/lib/pagbank";
+import { limparToken, montarCustomer, cpfValido } from "@/lib/pagbank";
 import type { InstallmentPlan } from "../installment-plan/route";
 
 const PB_API = "https://api.pagseguro.com";
@@ -13,27 +15,20 @@ const PB_API = "https://api.pagseguro.com";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { code, seq, method, encryptedCard, holderName, holderCpf } = body;
+    const { code, seq, method, encryptedCard, holderName, holderCpf, cpf } = body;
 
     if (!code || !seq || !method) {
       return NextResponse.json({ error: "code, seq e method são obrigatórios" }, { status: 400 });
     }
 
+    const denied = await authorizeGuestRequest(req, String(code), "payments:write");
+    if (denied) return denied;
+    if (!["pix", "card"].includes(method) || !Number.isInteger(Number(seq)) || Number(seq) < 1) return NextResponse.json({ error: "Método ou parcela inválida" }, { status: 400 });
+    if (method === "card" && (!encryptedCard || !holderName || !holderCpf)) return NextResponse.json({ error: "Dados do cartão obrigatórios" }, { status: 400 });
     // Load reservation
-    const rows: any[] = await (prisma as any).$queryRawUnsafe(
-      `SELECT id, code, guestName, guestEmail, checkIn, checkOut, nights,
-              totalAmount, cleaningFee, propertyId, paymentStatus, installmentData
-       FROM reservations WHERE code = ?`,
-      String(code).toUpperCase()
-    );
-    if (!rows.length) return NextResponse.json({ error: "Reserva não encontrada" }, { status: 404 });
-    const r = rows[0];
-
-    const propRows: any[] = await (prisma as any).$queryRawUnsafe(
-      `SELECT name FROM properties WHERE id = ?`, r.propertyId
-    );
-    const propertyName = propRows[0]?.name || "Imóvel";
-
+    const r = await prisma.reservation.findUnique({ where: { code: String(code).toUpperCase() }, include: { property: { select: { name: true } } } });
+    if (!r) return NextResponse.json({ error: "Reserva não encontrada" }, { status: 404 });
+    const propertyName = r.property.name;
     if (!r.installmentData) {
       return NextResponse.json({ error: "Nenhum plano de parcelamento encontrado" }, { status: 400 });
     }
@@ -54,9 +49,15 @@ export async function POST(req: NextRequest) {
     const isLocalhost = reqUrl.hostname === "localhost" || reqUrl.hostname === "127.0.0.1";
     const origin = process.env.NEXT_PUBLIC_BASE_URL || `${reqUrl.protocol}//${reqUrl.host}`;
 
-    const amountCents = Math.round(item.amount * 100);
+    if (method === "pix") {
+      const document = typeof cpf === "string" ? cpf.replace(/\D/g, "") : r.guestCpf || "";
+      if (!cpfValido(document)) return NextResponse.json({ error: "Informe um CPF válido antes de gerar o PIX.", precisaCpf: true }, { status: 400 });
+      if (document !== r.guestCpf) { await prisma.reservation.update({ where: { id: r.id }, data: { guestCpf: document } }); r.guestCpf = document; }
+    }
     const referenceId = `${r.code}-parcela-${seq}`;
-    const idempotencyKey = `${r.code}-inst-${seq}-${Date.now()}`;
+    const attempt = await beginPaymentAttempt(r.id, "pagbank", String(method), Number(seq));
+    const idempotencyKey = attempt.key;
+    const amountCents = attempt.amountCents;
 
     let payload: Record<string, unknown>;
 
@@ -67,10 +68,7 @@ export async function POST(req: NextRequest) {
       useOrdersApi = true;
       payload = {
         reference_id: referenceId,
-        customer: {
-          name: r.guestName || "Hospede",
-          email: r.guestEmail || "guest@reserva.com",
-        },
+        customer: montarCustomer(r),
         items: [
           {
             reference_id: referenceId,
@@ -81,6 +79,7 @@ export async function POST(req: NextRequest) {
         ],
         qr_codes: [
           {
+            expiration_date: new Date(Date.now() + 2 * 3600000).toISOString(),
             amount: { value: amountCents },
           },
         ],
@@ -120,7 +119,7 @@ export async function POST(req: NextRequest) {
 
     const charge = await pbRes.json();
     if (!pbRes.ok) {
-      console.error("pay-installment PagBank error:", JSON.stringify(charge));
+      console.error("pay-installment PagBank error:", "Gateway rejeitou a solicitação");
       const errObj = charge.error_messages?.[0];
       const msg = errObj
         ? `${errObj.description || "erro"} (param: ${errObj.parameter_name || "unknown"})`
@@ -128,60 +127,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: msg }, { status: pbRes.status });
     }
 
-    // For PIX orders, get status from charges array; for card charges, use direct status
-    const pbStatus = (useOrdersApi ? charge.charges?.[0]?.status : charge.status) as string;
-    const approvedStatuses = ["PAID", "AVAILABLE", "AUTHORIZED"];
-    const approved = approvedStatuses.includes(pbStatus);
-
-    // For PIX orders: qr_codes is at top level; for charges: inside payment_method
-    const qrCode = useOrdersApi
-      ? charge.qr_codes?.[0]
-      : charge.payment_method?.qr_codes?.[0];
-
-    if (approved) {
-      item.paid = true;
-      item.paidAt = new Date().toISOString();
-      item.mpPaymentId = charge.id;
-
-      const allPaid = plan.items.every(i => i.paid);
-
-      await (prisma as any).$executeRawUnsafe(
-        `UPDATE reservations SET installmentData = ?,
-          paymentStatus = ?,
-          paymentMethod = ?,
-          paidAt = ?
-         WHERE id = ?`,
-        JSON.stringify(plan),
-        allPaid ? "PAID" : "PARTIAL",
-        method === "pix" ? "PIX Parcelado" : `Cartão Parcelado`,
-        allPaid ? new Date().toISOString() : null,
-        r.id
-      );
-
-      await prisma.financialTransaction.create({
-        data: {
-          reservationId: r.id,
-          propertyId: r.propertyId,
-          type: "INCOME",
-          category: "INSTALLMENT",
-          description: `${item.label} - ${r.code} (${propertyName})`,
-          amount: item.amount,
-          isPaid: true,
-          paidAt: new Date(),
-        },
-      });
-
-      if (allPaid) {
-        await prisma.reservation.update({
-          where: { id: r.id },
-          data: { status: "CONFIRMED" },
-        });
-      }
-    }
-
+    await savePaymentAttempt(r.id, attempt, charge.id, Number(seq));
+    const { paymentStatus } = await reconcilePayment("pagbank", charge.id);
+    const refreshed = await prisma.reservation.findUniqueOrThrow({ where: { id: r.id }, select: { installmentData: true } });
+    const refreshedItem = JSON.parse(refreshed.installmentData || "{}").items?.find((part: { seq: number }) => part.seq === Number(seq));
+    const approved = paymentStatus !== "REVIEW" && refreshedItem?.paid === true;
+    const qrCode = useOrdersApi ? charge.qr_codes?.[0] : charge.payment_method?.qr_codes?.[0];
     return NextResponse.json({
       chargeId: charge.id,
       status: charge.status,
+      paymentStatus,
       installmentPaid: approved,
       // PIX data
       pixText: qrCode?.text ?? null,
@@ -189,6 +144,7 @@ export async function POST(req: NextRequest) {
       pixExpiresAt: qrCode?.expiration_date ?? null,
     });
   } catch (e) {
+    if (e instanceof PaymentError) return NextResponse.json({ error: e.message }, { status: e.status });
     console.error("pay-installment error:", e);
     return NextResponse.json({ error: "Erro interno" }, { status: 500 });
   }

@@ -1,4 +1,4 @@
-import { PrismaClient, UserRole, ReservationStatus, CleaningStatus } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { addDays, subDays } from "date-fns";
 
@@ -16,7 +16,7 @@ async function main() {
       name: "Administrador",
       email: "admin@rental.com",
       password: adminPass,
-      role: UserRole.ADMIN,
+      role: "ADMIN",
       phone: "(11) 99999-0000",
     },
   });
@@ -30,7 +30,7 @@ async function main() {
       name: "João Proprietário",
       email: "proprietario@rental.com",
       password: ownerPass,
-      role: UserRole.OWNER,
+      role: "OWNER",
       phone: "(11) 98888-1111",
     },
   });
@@ -44,7 +44,7 @@ async function main() {
       name: "Maria Equipe",
       email: "equipe@rental.com",
       password: teamPass,
-      role: UserRole.TEAM,
+      role: "TEAM",
       phone: "(11) 97777-2222",
     },
   });
@@ -66,7 +66,7 @@ async function main() {
       bathrooms: 1,
       basePrice: 450.00,
       cleaningFee: 80.00,
-      amenities: ["WiFi", "Ar-condicionado", "Piscina", "Estacionamento"],
+      amenities: JSON.stringify(["WiFi", "Ar-condicionado", "Piscina", "Estacionamento"]),
       ownerId: owner.id,
     },
   });
@@ -87,7 +87,7 @@ async function main() {
       bathrooms: 2,
       basePrice: 380.00,
       cleaningFee: 100.00,
-      amenities: ["WiFi", "Lareira", "Churrasqueira", "Jardim"],
+      amenities: JSON.stringify(["WiFi", "Lareira", "Churrasqueira", "Jardim"]),
       ownerId: owner.id,
     },
   });
@@ -108,7 +108,7 @@ async function main() {
       bathrooms: 1,
       basePrice: 180.00,
       cleaningFee: 50.00,
-      amenities: ["WiFi", "Netflix", "Ar-condicionado"],
+      amenities: JSON.stringify(["WiFi", "Netflix", "Ar-condicionado"]),
       ownerId: owner.id,
     },
   });
@@ -157,7 +157,7 @@ async function main() {
       cleaningFee: 80.00,
       commission: 143.00,
       ownerAmount: 1207.00,
-      status: ReservationStatus.CHECKED_IN,
+      status: "CHECKED_IN",
       source: "AIRBNB",
       createdById: admin.id,
     },
@@ -180,7 +180,7 @@ async function main() {
       cleaningFee: 100.00,
       commission: 162.00,
       ownerAmount: 1358.00,
-      status: ReservationStatus.CONFIRMED,
+      status: "CONFIRMED",
       source: "BOOKING",
       createdById: admin.id,
     },
@@ -203,7 +203,7 @@ async function main() {
       cleaningFee: 50.00,
       commission: 23.00,
       ownerAmount: 157.00,
-      status: ReservationStatus.CHECKED_OUT,
+      status: "CHECKED_OUT",
       source: "DIRECT",
       createdById: admin.id,
     },
@@ -220,7 +220,7 @@ async function main() {
       scheduledDate: today,
       checkoutTime: today,
       deadline: new Date(today.getTime() + 4 * 60 * 60 * 1000),
-      status: CleaningStatus.PENDING,
+      status: "PENDING",
     },
   });
 
@@ -234,7 +234,7 @@ async function main() {
       scheduledDate: addDays(today, 3),
       checkoutTime: addDays(today, 3),
       deadline: new Date(addDays(today, 3).getTime() + 4 * 60 * 60 * 1000),
-      status: CleaningStatus.PENDING,
+      status: "PENDING",
     },
   });
 
@@ -264,7 +264,6 @@ async function main() {
         createdById: admin.id,
       },
     ],
-    skipDuplicates: true,
   });
 
   console.log("✅ Seed concluído com sucesso!");

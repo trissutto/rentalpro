@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { clearSessionCaches } from "@/lib/client-cache";
 
 interface User {
   id: string;
@@ -26,6 +27,7 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: false,
 
       login: (user, token) => {
+        void clearSessionCaches().catch(() => {});
         set({ user, token, isAuthenticated: true });
         localStorage.setItem("token", token);
       },
@@ -33,7 +35,8 @@ export const useAuthStore = create<AuthState>()(
       logout: () => {
         set({ user: null, token: null, isAuthenticated: false });
         localStorage.removeItem("token");
-        fetch("/api/auth/logout", { method: "POST" });
+        void clearSessionCaches().catch(() => {});
+        void fetch("/api/auth/logout", { method: "POST", cache: "no-store" }).catch(() => {});
       },
 
       updateUser: (updates) =>
@@ -53,6 +56,7 @@ export async function apiRequest(url: string, options: RequestInit = {}) {
   const token = localStorage.getItem("token");
   const res = await fetch(url, {
     ...options,
+    cache: "no-store",
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),

@@ -1,5 +1,7 @@
 "use client";
 
+import { useGuestAccess } from "@/hooks/useGuestAccess";
+
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -150,6 +152,7 @@ function GuestCard({
 }
 
 export default function GuestsPage() {
+  const { guestFetch, guestLink } = useGuestAccess();
   const { code } = useParams<{ code: string }>();
   const router = useRouter();
 
@@ -160,7 +163,7 @@ export default function GuestsPage() {
   const [guests, setGuests] = useState<GuestForm[]>([]);
 
   useEffect(() => {
-    fetch(`/api/public/reservation/${code}`)
+    guestFetch(`/api/public/reservation/${code}`)
       .then((r) => r.json())
       .then((d) => {
         if (d.reservation) {
@@ -179,7 +182,7 @@ export default function GuestsPage() {
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, [code]);
+  }, [code, guestFetch]);
 
   function updateGuest(index: number, g: GuestForm) {
     setGuests((prev) => {
@@ -211,7 +214,7 @@ export default function GuestsPage() {
 
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/public/reservation/${code}/guests`, {
+      const res = await guestFetch(`/api/public/reservation/${code}/guests`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ guests }),
@@ -275,7 +278,7 @@ export default function GuestsPage() {
 
         <div className="flex flex-col gap-3">
           <a
-            href={`/reserva/${code}`}
+            href={guestLink(`/reserva/${code}`)}
             className="block bg-brand-600 text-white font-semibold py-3 rounded-xl hover:bg-brand-700 transition-colors"
           >
             Ver reserva →

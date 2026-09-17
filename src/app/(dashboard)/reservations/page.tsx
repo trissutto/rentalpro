@@ -327,56 +327,48 @@ function NewReservationModal({ properties, onClose, onCreated }: {
   const [form, setForm] = useState({
     propertyId: "", guestName: "", guestEmail: "", guestPhone: "", guestCount: 2,
     checkIn: "", checkOut: "", source: "DIRECT", notes: "",
-    totalAmount: "", cleaningFee: "", commission: "", ownerAmount: "",
+    manualTotal: "",
   });
   const [loading, setLoading] = useState(false);
+  const [quote, setQuote] = useState<{ key: string; totalAmount: number; cleaningFee: number; commission: number; ownerAmount: number; diarias: number } | null>(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [quoteError, setQuoteError] = useState("");
+  const quoteKey = JSON.stringify([form.propertyId, form.checkIn, form.checkOut, form.guestCount, form.manualTotal]);
+  const currentQuote = quote?.key === quoteKey ? quote : null;
 
-  function recalc(updated: typeof form, propOverride?: Property) {
-    const prop = propOverride ?? properties.find((p) => p.id === updated.propertyId);
-    if (!prop || !updated.checkIn || !updated.checkOut) return updated;
-    const nights = Math.ceil((new Date(updated.checkOut).getTime() - new Date(updated.checkIn).getTime()) / 86400000) + 1;
-    if (nights <= 0) return updated;
-    const base = Number(prop.basePrice) * nights;
-    const cleaning = Number(prop.cleaningFee);
-    const idealGuests = Number(prop.idealGuests ?? 2);
-    const extraFee = Number(prop.extraGuestFee ?? 0);
-    const extra = Math.max(0, updated.guestCount - idealGuests) * extraFee * nights;
-    const total = base + cleaning + extra;
-    const rate = Number(prop.commissionRate ?? 10) / 100;
-    const commission = total * rate;
-    const owner = total - commission - cleaning;
-    return {
-      ...updated,
-      totalAmount: String(total.toFixed(2)),
-      cleaningFee: String(cleaning),
-      commission: String(commission.toFixed(2)),
-      ownerAmount: String(owner.toFixed(2)),
-    };
-  }
+  useEffect(() => {
+    let cancelled = false;
+    setQuote(null);
+    setQuoteError("");
+    if (!form.propertyId || !form.checkIn || !form.checkOut) { setQuoteLoading(false); return; }
+    setQuoteLoading(true);
+    const query = new URLSearchParams({ propertyId: form.propertyId, checkIn: form.checkIn, checkOut: form.checkOut, guestCount: String(form.guestCount) });
+    if (form.manualTotal !== "") query.set("manualTotal", form.manualTotal);
+    apiRequest("/api/reservations/quote?" + query).then(async response => {
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Não foi possível calcular a cotação.");
+      if (!cancelled) setQuote({ ...data.quote, key: quoteKey });
+    }).catch(error => {
+      if (!cancelled) setQuoteError(error instanceof Error ? error.message : "Não foi possível calcular a cotação.");
+    }).finally(() => { if (!cancelled) setQuoteLoading(false); });
+    return () => { cancelled = true; };
+  }, [form.propertyId, form.checkIn, form.checkOut, form.guestCount, form.manualTotal, quoteKey]);
 
   function updateForm(field: string, value: string | number) {
-    setForm((prev) => {
-      const updated = { ...prev, [field]: value };
-      if (field === "propertyId" && value) {
-        const prop = properties.find((p) => p.id === String(value));
-        if (prop) updated.cleaningFee = String(prop.cleaningFee);
-      }
-      if (["checkIn", "checkOut", "propertyId", "guestCount"].includes(field) && updated.propertyId) {
-        return recalc(updated);
-      }
-      return updated;
-    });
+    setForm((prev) => ({ ...prev, [field]: value }));
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!currentQuote || quoteLoading) return;
     setLoading(true);
     try {
       const res = await apiRequest("/api/reservations", {
         method: "POST",
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, manualTotal: form.manualTotal === "" ? undefined : Number(form.manualTotal), expectedTotal: currentQuote.totalAmount }),
       });
       const data = await res.json();
+      if (data.code === "PRICE_CHANGED" && data.quote) setQuote({ ...data.quote, key: quoteKey });
       if (!res.ok) throw new Error(data.error);
       toast.success("Reserva criada com sucesso!");
       onCreated();
@@ -503,26 +495,33 @@ function NewReservationModal({ properties, onClose, onCreated }: {
             </select>
           </div>
 
-          {/* Financial summary */}
-          {form.totalAmount && (
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">Total negociado (opcional)</label>
+            <input type="number" min="0.01" step="0.01" className="input-base" placeholder="Usar a tarifa calculada" value={form.manualTotal} onChange={(e) => updateForm("manualTotal", e.target.value)} />
+            <p className="text-xs text-slate-500 mt-1">Preencha somente para aplicar um valor combinado. Limpeza, comissão e repasse são calculados pelo sistema.</p>
+          </div>
+
+          {quoteLoading && <p className="text-sm text-slate-500" role="status">Calculando cotação...</p>}
+          {quoteError && <p className="text-sm text-red-600" role="alert">{quoteError}</p>}
+          {currentQuote && (
             <div className="p-4 bg-brand-50 rounded-2xl border border-brand-100">
-              <p className="text-xs font-semibold text-brand-600 mb-3">RESUMO FINANCEIRO</p>
+              <p className="text-xs font-semibold text-brand-600 mb-3">RESUMO FINANCEIRO · {currentQuote.diarias} diária(s)</p>
               <div className="grid grid-cols-2 gap-2 text-sm">
                 <div>
                   <p className="text-slate-500 text-xs">Total</p>
-                  <p className="font-bold text-slate-800">{formatCurrency(Number(form.totalAmount))}</p>
+                  <p className="font-bold text-slate-800">{formatCurrency(currentQuote.totalAmount)}</p>
                 </div>
                 <div>
                   <p className="text-slate-500 text-xs">Limpeza</p>
-                  <p className="font-bold text-slate-800">{formatCurrency(Number(form.cleaningFee))}</p>
+                  <p className="font-bold text-slate-800">{formatCurrency(currentQuote.cleaningFee)}</p>
                 </div>
                 <div>
-                  <p className="text-slate-500 text-xs">Comissão (10%)</p>
-                  <p className="font-bold text-slate-800">{formatCurrency(Number(form.commission))}</p>
+                  <p className="text-slate-500 text-xs">Comissão</p>
+                  <p className="font-bold text-slate-800">{formatCurrency(currentQuote.commission)}</p>
                 </div>
                 <div>
                   <p className="text-slate-500 text-xs">Repasse Dono</p>
-                  <p className="font-bold text-green-600">{formatCurrency(Number(form.ownerAmount))}</p>
+                  <p className="font-bold text-green-600">{formatCurrency(currentQuote.ownerAmount)}</p>
                 </div>
               </div>
             </div>
@@ -535,7 +534,7 @@ function NewReservationModal({ properties, onClose, onCreated }: {
 
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancelar</button>
-            <button type="submit" disabled={loading} className="btn-primary flex-1">
+            <button type="submit" disabled={loading || quoteLoading || !currentQuote} className="btn-primary flex-1">
               {loading ? <><Loader2 size={16} className="animate-spin" /> Criando...</> : "Criar Reserva"}
             </button>
           </div>

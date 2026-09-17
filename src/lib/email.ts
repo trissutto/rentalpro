@@ -1,93 +1,141 @@
-/**
- * Minimal SMTP email sender using Node.js built-in tls/net modules.
- * Works with Gmail (smtp.gmail.com:465), Outlook, Brevo, etc.
- *
- * Gmail setup: use an "App Password" (Google Account → Security → App Passwords)
- */
-
+/** SMTP submission over implicit TLS (normally port 465), without external dependencies. */
 import * as tls from "tls";
 
 interface SendMailOptions {
-  host: string;       // e.g. "smtp.gmail.com"
-  port: number;       // 465 (SSL) or 587 (STARTTLS — use 465 for simplicity)
-  user: string;       // login email
-  pass: string;       // password or app password
-  from: string;       // "Reservas Ita <noreply@reservasita.com.br>"
+  host: string;
+  port: number;
+  user: string;
+  pass: string;
+  from: string;
   to: string;
   subject: string;
   html: string;
 }
 
-function b64(s: string) {
-  return Buffer.from(s).toString("base64");
+const SMTP_TIMEOUT_MS = 30_000;
+function b64(value: string) { return Buffer.from(value, "utf8").toString("base64"); }
+
+/** Each reply ends at its final code + space line, not at a TCP chunk boundary. */
+class SmtpReplies {
+  private buffer = "";
+  private multilineCode: number | null = null;
+  private replyBytes = 0;
+  private replies: number[] = [];
+  private pending: { resolve: (code: number) => void; reject: (error: Error) => void } | null = null;
+  private failure: Error | null = null;
+
+  constructor(private socket: tls.TLSSocket) {
+    socket.on("data", this.onData);
+    socket.on("error", this.onError);
+    socket.on("end", this.onEnd);
+    socket.on("close", this.onEnd);
+  }
+
+  private onError = () => this.fail(new Error("SMTP: falha na conexão segura."));
+  private onEnd = () => this.fail(new Error("SMTP: conexão encerrada antes da confirmação."));
+  private onData = (chunk: Buffer) => {
+    if (this.failure) return;
+    this.buffer += chunk.toString("utf8");
+    if (this.buffer.length + this.replyBytes > 65536) { this.fail(new Error("SMTP: resposta excedeu o limite.")); return; }
+    let end: number;
+    while ((end = this.buffer.indexOf("\r\n")) !== -1) {
+      const line = this.buffer.slice(0, end);
+      this.buffer = this.buffer.slice(end + 2);
+      const match = /^([2-5][0-9]{2})(?:([ -])(.*))?$/.exec(line);
+      if (!match) { this.fail(new Error("SMTP: resposta inválida.")); return; }
+      const code = Number(match[1]);
+      if (this.multilineCode !== null && this.multilineCode !== code) { this.fail(new Error("SMTP: resposta multilinha inconsistente.")); return; }
+      this.replyBytes += line.length + 2;
+      if (match[2] === "-") { this.multilineCode = code; continue; }
+      this.multilineCode = null;
+      this.replyBytes = 0;
+      if (this.pending) { const pending = this.pending; this.pending = null; pending.resolve(code); }
+      else { this.replies.push(code); if (this.replies.length > 8) { this.fail(new Error("SMTP: respostas inesperadas.")); return; } }
+    }
+  };
+
+  fail(error: Error) {
+    if (this.failure) return;
+    this.failure = error;
+    if (this.pending) { this.pending.reject(error); this.pending = null; }
+  }
+
+  next(): Promise<number> {
+    if (this.replies.length) return Promise.resolve(this.replies.shift()!);
+    if (this.failure) return Promise.reject(this.failure);
+    if (this.pending) return Promise.reject(new Error("SMTP: comandos concorrentes não permitidos."));
+    return new Promise((resolve, reject) => { this.pending = { resolve, reject }; });
+  }
+
+  async expect(allowed: number[], stage: string, command?: string) {
+    if (this.failure) throw this.failure;
+    const reply = this.next(); // Install waiter before writing: replies may arrive immediately.
+    if (command !== undefined) {
+      try { this.socket.write(command + "\r\n"); }
+      catch { this.fail(new Error("SMTP: não foi possível enviar o comando.")); }
+    }
+    const code = await reply;
+    if (!allowed.includes(code)) throw new Error(`SMTP ${stage} recusado (${code}).`);
+  }
 }
 
-function cmd(socket: tls.TLSSocket, text: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    socket.once("data", (d) => resolve(d.toString()));
-    socket.once("error", reject);
-    socket.write(text + "\r\n");
-  });
+function validateHeader(value: string, label: string) {
+  if (typeof value !== "string" || /[\r\n\0]/.test(value)) throw new Error(`SMTP: ${label} inválido.`);
 }
 
-function wait(socket: tls.TLSSocket): Promise<string> {
-  return new Promise((resolve, reject) => {
-    socket.once("data", (d) => resolve(d.toString()));
-    socket.once("error", reject);
-  });
+function mailbox(value: string, label: string) {
+  validateHeader(value, label);
+  const address = (value.match(/<([^<>]+)>\s*$/)?.[1] || value).trim();
+  if (address.length > 254 || !/^[^\s<>@,;]+@[^\s<>@,;]+\.[^\s<>@,;]+$/.test(address)) throw new Error(`SMTP: ${label} inválido.`);
+  return address;
+}
+
+/** RFC 2047 words stay short and never split a UTF-8 character between words. */
+function encodedHeader(value: string) {
+  const words: string[] = []; let part = "";
+  for (const character of value) {
+    if (Buffer.byteLength(part + character, "utf8") > 42) { words.push(`=?UTF-8?B?${b64(part)}?=`); part = ""; }
+    part += character;
+  }
+  if (part || !words.length) words.push(`=?UTF-8?B?${b64(part)}?=`);
+  return words.join("\r\n ");
 }
 
 export async function sendMail(opts: SendMailOptions): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const socket = tls.connect(
-      { host: opts.host, port: opts.port, servername: opts.host },
-      async () => {
-        try {
-          // Wait for banner
-          await wait(socket);
-          await cmd(socket, `EHLO ${opts.host}`);
-          await cmd(socket, `AUTH LOGIN`);
-          await cmd(socket, b64(opts.user));
-          const authReply = await cmd(socket, b64(opts.pass));
-          if (!authReply.startsWith("235")) {
-            throw new Error(`SMTP AUTH failed: ${authReply.trim()}`);
-          }
-          await cmd(socket, `MAIL FROM:<${opts.user}>`);
-          await cmd(socket, `RCPT TO:<${opts.to}>`);
-          await cmd(socket, `DATA`);
-
-          const boundary = `boundary_${Date.now()}`;
-          const message = [
-            `From: ${opts.from}`,
-            `To: ${opts.to}`,
-            `Subject: ${opts.subject}`,
-            `MIME-Version: 1.0`,
-            `Content-Type: multipart/alternative; boundary="${boundary}"`,
-            ``,
-            `--${boundary}`,
-            `Content-Type: text/html; charset=UTF-8`,
-            `Content-Transfer-Encoding: base64`,
-            ``,
-            b64(opts.html),
-            ``,
-            `--${boundary}--`,
-          ].join("\r\n");
-
-          const dataReply = await cmd(socket, message + "\r\n.");
-          if (!dataReply.startsWith("250")) {
-            throw new Error(`SMTP DATA failed: ${dataReply.trim()}`);
-          }
-          await cmd(socket, "QUIT");
-          socket.destroy();
-          resolve();
-        } catch (err) {
-          socket.destroy();
-          reject(err);
-        }
-      }
-    );
-    socket.on("error", reject);
-  });
+  validateHeader(opts.host, "servidor");
+  validateHeader(opts.subject, "assunto");
+  if (!opts.host || /\s/.test(opts.host) || !Number.isInteger(opts.port) || opts.port < 1 || opts.port > 65535 || !opts.user || !opts.pass) throw new Error("SMTP: configuração incompleta.");
+  if (opts.port === 587) throw new Error("SMTP: configure TLS implícito na porta 465; STARTTLS não é suportado neste transporte.");
+  const fromAddress = mailbox(opts.from, "remetente");
+  const toAddress = mailbox(opts.to, "destinatário");
+  const displayName = opts.from.includes("<") ? opts.from.slice(0, opts.from.indexOf("<")).trim().replace(/^"|"$/g, "") : "";
+  const from = displayName ? `${encodedHeader(displayName)} <${fromAddress}>` : fromAddress;
+  const html = b64(opts.html).match(/.{1,76}/g)?.join("\r\n") || "";
+  const message = [
+    `From: ${from}`, `To: ${toAddress}`, `Subject: ${encodedHeader(opts.subject)}`,
+    "MIME-Version: 1.0", 'Content-Type: text/html; charset="UTF-8"',
+    "Content-Transfer-Encoding: base64", "", html,
+  ].join("\r\n");
+  const socket = tls.connect({ host: opts.host, port: opts.port, servername: opts.host, rejectUnauthorized: true });
+  const replies = new SmtpReplies(socket);
+  const timer = setTimeout(() => { replies.fail(new Error("SMTP: tempo limite sem confirmação do servidor.")); socket.destroy(); }, SMTP_TIMEOUT_MS);
+  try {
+    await replies.expect([220], "banner");
+    await replies.expect([250], "EHLO", `EHLO ${opts.host}`);
+    await replies.expect([334], "AUTH", "AUTH LOGIN");
+    await replies.expect([334], "usuário", b64(opts.user));
+    await replies.expect([235], "autenticação", b64(opts.pass));
+    await replies.expect([250], "MAIL FROM", `MAIL FROM:<${fromAddress}>`);
+    await replies.expect([250, 251], "RCPT TO", `RCPT TO:<${toAddress}>`);
+    await replies.expect([354], "DATA", "DATA");
+    await replies.expect([250], "mensagem", message + "\r\n.");
+    // The final 250 means the SMTP server accepted responsibility. A QUIT
+    // disconnect must not turn accepted mail into a failure and trigger resend.
+    try { socket.end("QUIT\r\n"); } catch { /* message already accepted */ }
+  } finally {
+    clearTimeout(timer);
+    socket.destroy();
+  }
 }
 
 // ─── Email templates ─────────────────────────────────────────────────────────
@@ -143,7 +191,7 @@ export function pixEmailHtml(opts: {
               <td style="font-size:13px;font-weight:600;color:#1e293b;text-align:right;">${fmtDate(opts.checkOut)}</td>
             </tr>
             <tr>
-              <td style="font-size:13px;color:#64748b;padding:4px 0;">${opts.nights} noite${opts.nights > 1 ? "s" : ""}</td>
+              <td style="font-size:13px;color:#64748b;padding:4px 0;">${opts.nights} diária${opts.nights > 1 ? "s" : ""} cobrada${opts.nights > 1 ? "s" : ""}</td>
               <td style="font-size:13px;font-weight:700;color:#4f46e5;text-align:right;">${fmt(opts.totalAmount)}</td>
             </tr>
             <tr>

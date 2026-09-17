@@ -356,7 +356,7 @@ export default function PropertiesPage() {
                 <div className="flex items-center gap-4 mt-2">
                   <div className="flex items-center gap-1">
                     <DollarSign size={12} className="text-green-500" />
-                    <span className="text-sm font-bold text-green-600">{formatCurrency(Number(prop.basePrice))}<span className="text-slate-400 font-normal text-xs">/noite</span></span>
+                    <span className="text-sm font-bold text-green-600">{formatCurrency(Number(prop.basePrice))}<span className="text-slate-400 font-normal text-xs">/diária</span></span>
                   </div>
                   <span className="text-xs text-slate-400">Limpeza: {formatCurrency(Number(prop.cleaningFee))}</span>
                 </div>
@@ -649,12 +649,12 @@ function PropertyModal({ property, owners, onClose, onSaved }: {
                   value={form.extraGuestFee}
                   onChange={(e) => set("extraGuestFee", e.target.value)}
                 />
-                <p className="text-[10px] text-slate-400 mt-1 text-center">Por hóspede/noite</p>
+                <p className="text-[10px] text-slate-400 mt-1 text-center">Por hóspede/diária</p>
               </div>
             </div>
             {Number(form.extraGuestFee) > 0 && (
               <p className="text-[11px] text-amber-700 mt-2 bg-amber-100 rounded-lg px-2 py-1.5">
-                Ex: {Number(form.idealGuests) + 1} hóspedes por 3 noites → +{" "}
+                Ex: {Number(form.idealGuests) + 1} hóspedes por 3 diárias → +{" "}
                 {formatCurrency(Number(form.extraGuestFee) * 3)} de excedente
               </p>
             )}
@@ -662,7 +662,7 @@ function PropertyModal({ property, owners, onClose, onSaved }: {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Preço/noite (R$) *</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Preço/diária (R$) *</label>
               <input type="number" className="input-base" min={0} step="0.01" placeholder="350.00" value={form.basePrice} onChange={(e) => set("basePrice", e.target.value)} required />
             </div>
             <div>
@@ -691,8 +691,8 @@ function PropertyModal({ property, owners, onClose, onSaved }: {
             </div>
             {form.basePrice && (
               <p className="text-xs text-slate-400 mt-1.5">
-                Exemplo: reserva de {formatCurrency(Number(form.basePrice))}/noite →
-                comissão de {formatCurrency(Number(form.basePrice) * Number(form.commissionRate || 0) / 100)}/noite
+                Exemplo: reserva de {formatCurrency(Number(form.basePrice))}/diária →
+                comissão de {formatCurrency(Number(form.basePrice) * Number(form.commissionRate || 0) / 100)}/diária
               </p>
             )}
           </div>

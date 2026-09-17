@@ -19,4 +19,12 @@ chown -R nextjs:nodejs /app/prisma
 su-exec nextjs:nodejs node /app/node_modules/prisma/build/index.js db push \
   --schema /app/prisma-schema/schema.prisma --skip-generate
 
+# Verified legacy copies on the persistent volume survive replacement of the
+# old container. The migration checks bytes before updating the database.
+su-exec nextjs:nodejs node /app/scripts/migrate-payment-receipts.cjs
+if [ -d /app/prisma/legacy-receipts-before-audit ]; then
+  LEGACY_RECEIPTS_ROOT=/app/prisma/legacy-receipts-before-audit \
+    su-exec nextjs:nodejs node /app/scripts/migrate-payment-receipts.cjs
+fi
+
 exec su-exec nextjs:nodejs node server.js

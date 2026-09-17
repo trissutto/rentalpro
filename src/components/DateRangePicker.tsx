@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useId } from "react";
 import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight, Calendar, X } from "lucide-react";
 
@@ -38,16 +38,36 @@ export default function DateRangePicker({ checkIn, checkOut, onChangeCheckIn, on
   const [selecting, setSelecting] = useState<"checkIn" | "checkOut">("checkIn");
   const [hoveredDate, setHoveredDate] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const dialogId = useId();
 
   const today = new Date();
   const [viewMonth, setViewMonth] = useState(today.getMonth());
   const [viewYear, setViewYear] = useState(today.getFullYear());
 
-  // Lock body scroll when open
+  // Keep keyboard focus inside the modal and restore it to the opener.
   useEffect(() => {
-    if (open) document.body.style.overflow = "hidden";
-    else document.body.style.overflow = "";
-    return () => { document.body.style.overflow = ""; };
+    if (!open) return;
+    const opener = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const panel = dialogRef.current;
+    panel?.querySelector<HTMLElement>("button:not(:disabled)")?.focus();
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") { event.preventDefault(); setOpen(false); return; }
+      if (event.key !== "Tab" || !panel) return;
+      const controls = Array.from(panel.querySelectorAll<HTMLElement>("button:not(:disabled), [href], input, [tabindex='0']"))
+        .filter(el => el.getClientRects().length && getComputedStyle(el).visibility !== "hidden");
+      const first = controls[0], last = controls[controls.length - 1];
+      if (!first) { event.preventDefault(); panel.focus(); }
+      else if (event.shiftKey && (document.activeElement === first || !panel.contains(document.activeElement))) {
+        event.preventDefault(); last.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || !panel.contains(document.activeElement))) {
+        event.preventDefault(); first.focus();
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => { document.body.style.overflow = previousOverflow; document.removeEventListener("keydown", onKeyDown); opener?.focus(); };
   }, [open]);
 
   function prevMonth() {
@@ -77,7 +97,8 @@ export default function DateRangePicker({ checkIn, checkOut, onChangeCheckIn, on
       } else {
         onChangeCheckOut(dateStr);
         setSelecting("checkIn");
-        setTimeout(() => setOpen(false), 200);
+        // Close synchronously so an old timer cannot close a reopened dialog.
+        setOpen(false);
       }
     }
   }
@@ -113,10 +134,23 @@ export default function DateRangePicker({ checkIn, checkOut, onChangeCheckIn, on
         <button
           key={d}
           type="button"
+          data-date={ds}
+          disabled={ds < todayStr}
+          aria-label={parseDate(ds)!.toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric" })}
+          aria-pressed={ds === checkIn || ds === checkOut}
+          onKeyDown={event => {
+            const offsets: Record<string, number> = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 };
+            const offset = offsets[event.key];
+            if (offset === undefined) return;
+            event.preventDefault();
+            const days = Array.from(dialogRef.current?.querySelectorAll<HTMLButtonElement>("button[data-date]") || []);
+            const target = days[days.indexOf(event.currentTarget) + offset];
+            if (target && !target.disabled) target.focus();
+          }}
           onClick={() => handleDayClick(ds)}
           onMouseEnter={() => setHoveredDate(ds)}
           onMouseLeave={() => setHoveredDate(null)}
-          className="aspect-square rounded-full flex items-center justify-center text-sm transition-all duration-100"
+          className="aspect-square rounded-full flex items-center justify-center text-sm transition-all duration-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
           style={{
             background: st.bg,
             color: st.text,
@@ -136,7 +170,7 @@ export default function DateRangePicker({ checkIn, checkOut, onChangeCheckIn, on
   return (
     <div ref={ref} className="relative">
       {/* Trigger */}
-      <button type="button" onClick={() => setOpen(!open)} className="flex items-center gap-3 w-full text-left">
+      <button type="button" aria-haspopup="dialog" aria-expanded={open} aria-controls={dialogId} onClick={() => setOpen(!open)} className="flex items-center gap-3 w-full text-left">
         <div className="flex-1 min-w-0">
           <label className="block text-[10px] mb-0.5 uppercase tracking-wider" style={{ color: "#c9a84c" }}>Entrada</label>
           <span className="text-sm text-white font-medium">{checkIn ? formatShort(checkIn) : "Selecionar"}</span>
@@ -161,6 +195,12 @@ export default function DateRangePicker({ checkIn, checkOut, onChangeCheckIn, on
             style={{ zIndex: 9999 }}
           >
             <div
+              ref={dialogRef}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Selecionar datas da hospedagem"
+              id={dialogId}
+              tabIndex={-1}
               className="w-full sm:max-w-[580px] sm:rounded-2xl rounded-t-2xl overflow-hidden"
               style={{
                 background: "#14141e",
@@ -177,11 +217,11 @@ export default function DateRangePicker({ checkIn, checkOut, onChangeCheckIn, on
                   </p>
                   {checkIn && (
                     <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.4)" }}>
-                      {formatShort(checkIn)}{checkOut ? ` → ${formatShort(checkOut)} · ${nights} noite${nights !== 1 ? "s" : ""}` : ""}
+                      {formatShort(checkIn)}{checkOut ? ` → ${formatShort(checkOut)} · ${nights} noite${nights !== 1 ? "s" : ""} · ${nights + 1} diárias cobradas` : ""}
                     </p>
                   )}
                 </div>
-                <button type="button" onClick={() => setOpen(false)} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(255,255,255,0.1)" }}>
+                <button type="button" aria-label="Fechar calendário" onClick={() => setOpen(false)} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(255,255,255,0.1)" }}>
                   <X size={16} className="text-white" />
                 </button>
               </div>
@@ -192,11 +232,11 @@ export default function DateRangePicker({ checkIn, checkOut, onChangeCheckIn, on
                   {/* Month 1 */}
                   <div className="flex-1">
                     <div className="flex items-center justify-between mb-3">
-                      <button type="button" onClick={prevMonth} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(255,255,255,0.06)" }}>
+                      <button type="button" aria-label="Mês anterior" onClick={prevMonth} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(255,255,255,0.06)" }}>
                         <ChevronLeft size={16} style={{ color: "#c9a84c" }} />
                       </button>
                       <span className="text-sm font-semibold text-white">{MONTHS[viewMonth]} {viewYear}</span>
-                      <button type="button" onClick={nextMonth} className="w-8 h-8 rounded-full flex items-center justify-center sm:invisible" style={{ background: "rgba(255,255,255,0.06)" }}>
+                      <button type="button" aria-label="Próximo mês" onClick={nextMonth} className="w-8 h-8 rounded-full flex items-center justify-center sm:invisible" style={{ background: "rgba(255,255,255,0.06)" }}>
                         <ChevronRight size={16} style={{ color: "#c9a84c" }} />
                       </button>
                     </div>
@@ -213,7 +253,7 @@ export default function DateRangePicker({ checkIn, checkOut, onChangeCheckIn, on
                     <div className="flex items-center justify-between mb-3">
                       <div className="w-8" />
                       <span className="text-sm font-semibold text-white">{MONTHS[m2]} {y2}</span>
-                      <button type="button" onClick={nextMonth} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(255,255,255,0.06)" }}>
+                      <button type="button" aria-label="Próximo mês" onClick={nextMonth} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(255,255,255,0.06)" }}>
                         <ChevronRight size={16} style={{ color: "#c9a84c" }} />
                       </button>
                     </div>
@@ -236,7 +276,7 @@ export default function DateRangePicker({ checkIn, checkOut, onChangeCheckIn, on
                     className="w-full py-3 rounded-xl font-semibold text-sm transition-all"
                     style={{ background: "#c9a84c", color: "#0a0a0a" }}
                   >
-                    Confirmar · {formatShort(checkIn)} → {formatShort(checkOut)} ({nights} noite{nights !== 1 ? "s" : ""})
+                    Confirmar · {formatShort(checkIn)} → {formatShort(checkOut)} ({nights} noites · {nights + 1} diárias)
                   </button>
                 </div>
               )}

@@ -1,3 +1,4 @@
+import { createGuestLink } from "@/lib/guest-access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { checkCronSecret } from "@/lib/cron-auth";
@@ -30,8 +31,8 @@ async function sendWhatsApp(phone: string, message: string): Promise<boolean> {
   const instance = process.env.WHATSAPP_INSTANCE;
 
   if (!apiUrl || !apiKey) {
-    console.log("📱 WhatsApp [SIMULADO] →", phone, ":", message.substring(0, 80) + "...");
-    return true;
+    console.warn("WhatsApp não configurado; envio não realizado");
+    return false;
   }
 
   try {
@@ -70,6 +71,7 @@ export async function GET(req: NextRequest) {
   const newReservations = await prisma.reservation.findMany({
     where: {
       status: "CONFIRMED",
+      paymentStatus: "PAID",
       waMsgBooking: false,
       guestPhone: { not: null },
     },
@@ -86,14 +88,14 @@ Olá, ${r.guestName}! Seu pagamento foi recebido e sua reserva está confirmada.
 📍 *Imóvel:* ${r.property.name}
 📅 *Check-in:* ${formatDate(r.checkIn)} a partir das ${r.property.checkInTime || "14:00"}
 📅 *Check-out:* ${formatDate(r.checkOut)} até ${r.property.checkOutTime || "12:00"}
-🌙 *Noites:* ${r.nights}
+🌙 *Diárias cobradas:* ${r.nights}
 💰 *Total pago:* ${formatCurrency(r.totalAmount)}
 🔑 *Código:* ${r.code}
 
-Faça seu check-in online antes de chegar:
-${baseUrl}/checkin/${r.code}
+Acompanhe sua reserva e a liberação do check-in:
+${createGuestLink(r, `/checkin/${r.code}`, baseUrl)}
 
-📄 Contrato: ${baseUrl}/api/public/contract/${r.code}
+📄 Contrato: ${createGuestLink(r, `/api/public/contract/${r.code}`, baseUrl)}
 
 Qualquer dúvida, estamos à disposição! 🎉`;
 
@@ -117,7 +119,7 @@ Qualquer dúvida, estamos à disposição! 🎉`;
         lt: addDays(twoDaysAhead, 1),
       },
     },
-    include: { property: { select: { name: true, address: true, checkInTime: true, accessInstructions: true, wifiName: true, wifiPassword: true } } },
+    include: { property: { select: { name: true, address: true, checkInTime: true } } },
   });
 
   for (const r of reminderReservations) {
@@ -133,21 +135,7 @@ Olá, ${r.guestName}! Sua estadia está chegando 😊
 
 `;
 
-    if (r.property.accessInstructions) {
-      msg += `🔑 *Como acessar:*\n${r.property.accessInstructions}\n\n`;
-    }
-
-    if (r.property.wifiName) {
-      msg += `📶 *Wi-Fi:* ${r.property.wifiName}`;
-      if (r.property.wifiPassword) msg += ` | Senha: ${r.property.wifiPassword}`;
-      msg += "\n\n";
-    }
-
-    if (!r.checkInCompleted) {
-      msg += `✅ Faça seu check-in online agora:\n${baseUrl}/checkin/${r.code}\n\n`;
-    }
-
-    msg += "Boa estadia! 🎉";
+    msg += `\n\nAs instruções de acesso e o Wi-Fi ficam disponíveis no horário do check-in, após a confirmação do pagamento integral.\n${createGuestLink(r, `/checkin/${r.code}`, baseUrl)}`;
 
     const ok = await sendWhatsApp(r.guestPhone, msg);
     if (ok) {
@@ -191,7 +179,7 @@ Até a próxima! 😊`;
     if (ok) {
       await prisma.reservation.update({
         where: { id: r.id },
-        data: { waMsgCheckout: true, status: "CHECKED_OUT" },
+        data: { waMsgCheckout: true },
       });
       results.checkoutMessages++;
     } else {
@@ -209,10 +197,11 @@ Até a próxima! 😊`;
 
   try {
     const reservationsWithPlans = await (prisma as any).$queryRawUnsafe(`
-      SELECT id, code, guestName, guestPhone, installmentData
+      SELECT id, code, checkOut, guestName, guestPhone, installmentData
       FROM reservations
       WHERE installmentData IS NOT NULL AND installmentData != ''
-        AND status NOT IN ('CANCELLED', 'CHECKED_OUT')
+        AND status NOT IN ('CANCELLED', 'CANCELED', 'CHECKED_OUT', 'PAYMENT_REVIEW')
+        AND paymentStatus != 'REVIEW'
     `) as any[];
 
     for (const r of reservationsWithPlans) {
@@ -237,7 +226,7 @@ Olá, ${r.guestName}! Você tem uma parcela vencendo em 3 dias.
 📅 *Vencimento:* ${formatDate(dueDate)}
 
 👉 Acesse para pagar agora:
-${baseUrl}/pagar/${r.code}
+${createGuestLink(r, `/pagar/${r.code}`, baseUrl)}
 
 Qualquer dúvida, estamos à disposição! 😊`;
 
@@ -273,11 +262,18 @@ Qualquer dúvida, estamos à disposição! 😊`;
       }
 
       if (planChanged) {
-        await (prisma as any).$executeRawUnsafe(
-          `UPDATE reservations SET installmentData = ? WHERE id = ?`,
-          JSON.stringify(plan),
-          r.id
-        );
+        await prisma.$transaction(async tx => {
+          await tx.$executeRawUnsafe("UPDATE reservations SET id = id WHERE id = ?", r.id);
+          const current = await tx.reservation.findUnique({ where: { id: r.id }, select: { installmentData: true } });
+          if (!current?.installmentData) return;
+          const fresh = JSON.parse(current.installmentData);
+          for (const item of fresh.items ?? []) {
+            const sent = plan.items?.find((candidate: { seq: number }) => candidate.seq === item.seq);
+            if (sent?.reminderSent) item.reminderSent = true;
+            if (sent?.overdueAlertSent) item.overdueAlertSent = true;
+          }
+          await tx.reservation.update({ where: { id: r.id }, data: { installmentData: JSON.stringify(fresh) } });
+        });
       }
     }
   } catch (err) {

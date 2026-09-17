@@ -1,5 +1,7 @@
 "use client";
 
+import { useGuestAccess } from "@/hooks/useGuestAccess";
+
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import {
@@ -66,6 +68,7 @@ interface ReservationData {
   totalAmount: number;
   cleaningFee: number;
   paymentStatus: string;
+  status?: string;
   paymentMethod?: string;
   paidAt?: string;
   property: { name: string; city: string; state: string };
@@ -84,6 +87,7 @@ const STATUS_CONFIG = {
   PAID:     { label: "Pago ✓",              color: "text-green-600 bg-green-50 border-green-200",   Icon: CheckCircle2 },
   FAILED:   { label: "Pagamento Recusado",  color: "text-red-600 bg-red-50 border-red-200",         Icon: XCircle },
   REFUNDED: { label: "Reembolsado",         color: "text-slate-600 bg-slate-50 border-slate-200",   Icon: XCircle },
+  REVIEW:   { label: "Aguardando conferência", color: "text-amber-700 bg-amber-50 border-amber-200", Icon: AlertTriangle },
 };
 
 type FullMethod = "pix" | "card";
@@ -296,7 +300,7 @@ function PixDisplay({ pixData, onClose }: { pixData: PixData; onClose?: () => vo
           <p className="font-bold text-white text-sm">Pague com PIX</p>
         </div>
         {onClose && (
-          <button onClick={onClose} className="text-white/70 hover:text-white text-xs">✕ Cancelar</button>
+          <button onClick={onClose} className="text-white/70 hover:text-white text-xs">✕ Fechar código</button>
         )}
       </div>
       <div className="p-5">
@@ -327,7 +331,7 @@ function PixDisplay({ pixData, onClose }: { pixData: PixData; onClose?: () => vo
         )}
         <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
           <p className="text-xs text-amber-700 text-center">
-            Após pagar, sua reserva será confirmada automaticamente em até 1 minuto.
+            Esta página acompanha a confirmação. Aguarde a confirmação do banco antes de tentar outro pagamento.
           </p>
         </div>
       </div>
@@ -337,6 +341,7 @@ function PixDisplay({ pixData, onClose }: { pixData: PixData; onClose?: () => vo
 
 // ── Main Page ────────────────────────────────────────────────────────────
 export default function PagarPage() {
+  const { guestFetch, guestLink } = useGuestAccess();
   const { code } = useParams<{ code: string }>();
   const searchParams = useSearchParams();
   const returnStatus = searchParams.get("status");
@@ -356,6 +361,16 @@ export default function PagarPage() {
   const [pixData, setPixData] = useState<PixData | null>(null);
   const [generatingPix, setGeneratingPix] = useState(false);
   const [pixError, setPixError] = useState("");
+  const [pollError, setPollError] = useState("");
+  const [pollNotice, setPollNotice] = useState("");
+  const [pollRetry, setPollRetry] = useState(0);
+  const [pollPaused, setPollPaused] = useState(false);
+  const [paymentReview, setPaymentReview] = useState(false);
+  const reviewWasActive = useRef(false);
+  const paymentBlocked = useRef(false);
+  const mounted = useRef(true);
+  const hasReservation = useRef(false);
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // CPF do pagador: exigido pelo banco e guardado na reserva depois de informado
   const [cpfPix, setCpfPix] = useState("");
   const [pedindoCpf, setPedindoCpf] = useState(false);
@@ -376,6 +391,8 @@ export default function PagarPage() {
 
   // Active installment being paid
   const [activeSeq, setActiveSeq] = useState<number | null>(null);
+  const activeSeqRef = useRef<number | null>(null);
+  activeSeqRef.current = activeSeq;
   const [installPixData, setInstallPixData] = useState<PixData | null>(null);
   const [installPayMethod, setInstallPayMethod] = useState<FullMethod>("pix");
 
@@ -383,40 +400,170 @@ export default function PagarPage() {
   const [uploadingSeq, setUploadingSeq] = useState<number | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState<number | null>(null);
 
+  const needsReview = paymentReview || reservation?.paymentStatus === "REVIEW" || reservation?.status === "PAYMENT_REVIEW";
+  const bookingClosed = ["CANCELLED", "CANCELED", "CHECKED_OUT"].includes(reservation?.status || "") || reservation?.paymentStatus === "REFUNDED";
+  paymentBlocked.current = needsReview || bookingClosed || reservation?.paymentStatus === "PAID";
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    };
+  }, []);
+
   // ── Load data ────────────────────────────────────────────────────────
-  const loadReservation = useCallback(() => {
-    fetch(`/api/public/reservation/${code}`)
-      .then(r => r.json())
-      .then(d => {
-        if (d.error) { setError(d.error); return; }
-        setReservation(d.reservation);
-        if (d.reservation.paymentStatus === "FAILED" && cardSubmitLocked.current) {
+  const fetchReservation = useCallback(async (signal?: AbortSignal): Promise<ReservationData> => {
+    const response = await guestFetch(`/api/public/reservation/${code}`, { signal: signal || AbortSignal.timeout(10000) });
+    const data = await response.json();
+    if (!response.ok || data.error || !data.reservation) throw new Error(data.error || "Não foi possível consultar a reserva.");
+    return data.reservation;
+  }, [code, guestFetch]);
+
+  const applyReservation = useCallback((current: ReservationData & { guestCpf?: string }) => {
+        hasReservation.current = true;
+        setError("");
+        setReservation(current);
+        const inReview = current.paymentStatus === "REVIEW" || current.status === "PAYMENT_REVIEW";
+        if (reviewWasActive.current && !inReview) {
+          cardSubmitLocked.current = false;
+          setCardPending(false);
+        }
+        reviewWasActive.current = inReview;
+        setPaymentReview(inReview);
+        if (current.paymentStatus === "FAILED" && cardSubmitLocked.current) {
           cardSubmitLocked.current = false;
           setCardPending(false);
           setCardError("Pagamento recusado. Você pode tentar novamente.");
         }
+        if (current.paymentStatus === "PAID") {
+          setCardPending(false);
+          setPixData(null);
+          setInstallPixData(null);
+          setPollError("");
+          setPollNotice("");
+        }
+        if (activeSeqRef.current !== null && current.installmentPlan?.items.some(item => item.seq === activeSeqRef.current && item.paid)) {
+          cardSubmitLocked.current = false;
+          setCardPending(false);
+          setActiveSeq(null);
+          setInstallPixData(null);
+        }
         // Já informou o CPF antes: não faz o hóspede digitar de novo
-        if (d.reservation.guestCpf) setCpfPix(formatarCpf(d.reservation.guestCpf));
-        if (d.reservation.installmentPlan) {
+        if (current.guestCpf) setCpfPix(formatarCpf(current.guestCpf));
+        if (current.installmentPlan) {
           setPayMode("installment");
           setPlanCreated(true);
         }
-      })
-      .catch(() => setError("Reserva não encontrada"))
-      .finally(() => setLoading(false));
-  }, [code]);
+  }, []);
+
+  const loadReservation = useCallback(async () => {
+    try {
+      const current = await fetchReservation();
+      if (!mounted.current) return null;
+      applyReservation(current);
+      setPollError("");
+      return current;
+    } catch (err) {
+      if (mounted.current) {
+        const message = err instanceof Error ? err.message : "Não foi possível consultar a reserva.";
+        if (hasReservation.current) setPollError(message);
+        else setError(message);
+      }
+      return null;
+    } finally { if (mounted.current) setLoading(false); }
+  }, [fetchReservation, applyReservation]);
 
   useEffect(() => {
-    loadReservation();
-    if (returnStatus === "success" || returnStatus === "pending") {
-      const t1 = setTimeout(loadReservation, 3000);
-      const t2 = setTimeout(loadReservation, 8000);
-      return () => { clearTimeout(t1); clearTimeout(t2); };
-    }
-  }, [loadReservation, returnStatus]);
+    const controller = new AbortController();
+    let disposed = false;
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    fetchReservation(controller.signal).then(current => {
+      if (!disposed) applyReservation(current);
+    }).catch(err => {
+      if (!disposed) setError(controller.signal.aborted ? "A consulta demorou demais. Tente carregar novamente." : err instanceof Error ? err.message : "Não foi possível consultar a reserva.");
+    }).finally(() => { clearTimeout(timeout); if (!disposed) setLoading(false); });
+    return () => { disposed = true; clearTimeout(timeout); controller.abort(); };
+  }, [fetchReservation, applyReservation]);
+
+  // Poll the ordinary PIX flow as well as a gateway return. Requests never
+  // overlap; cancellation and failed status reads do not imply unpaid funds.
+  const watchedPix = installPixData || pixData;
+  const watchedSeq = installPixData ? activeSeq : null;
+  const returnedFromGateway = returnStatus === "success" || returnStatus === "pending";
+  useEffect(() => {
+    if (pollPaused || (!watchedPix && !returnedFromGateway) || !reservation || needsReview || bookingClosed || reservation.paymentStatus === "PAID") return;
+    const expiry = watchedPix?.expiresAt ? new Date(watchedPix.expiresAt).getTime() : NaN;
+    const deadline = Number.isFinite(expiry) ? expiry : Date.now() + 30 * 60 * 1000;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+    let timeout: ReturnType<typeof setTimeout>;
+    let controller: AbortController | undefined;
+    let failures = 0;
+    setPollError("");
+    setPollNotice("");
+
+    const poll = async () => {
+      controller = new AbortController();
+      timeout = setTimeout(() => controller?.abort(), 8000);
+      try {
+        const current = await fetchReservation(controller.signal);
+        if (stopped) return;
+        applyReservation(current);
+        failures = 0;
+        setPollError("");
+        const installmentPaid = watchedSeq !== null && current.installmentPlan?.items.some(item => item.seq === watchedSeq && item.paid);
+        if (current.paymentStatus === "PAID" || current.paymentStatus === "REVIEW" || current.status === "PAYMENT_REVIEW"
+          || ["CANCELLED", "CANCELED", "CHECKED_OUT"].includes(current.status || "") || current.paymentStatus === "REFUNDED") return;
+        if (installmentPaid) {
+          setInstallPixData(null);
+          setActiveSeq(null);
+          setPollNotice("Pagamento da parcela confirmado.");
+          return;
+        }
+        if (Date.now() >= deadline) {
+          setPollPaused(true);
+          setPixData(null);
+          setInstallPixData(null);
+          setPollNotice(Number.isFinite(expiry)
+            ? "Este PIX expirou. Se você já pagou, verifique o status ou fale com a administração antes de tentar novamente."
+            : "O acompanhamento automático foi pausado. Verifique o status antes de fazer outro pagamento.");
+          return;
+        }
+      } catch {
+        if (stopped) return;
+        failures += 1;
+        setPollError(failures >= 3
+          ? "Não foi possível consultar o pagamento. O acompanhamento foi pausado; tente verificar novamente."
+          : "Falha ao consultar o pagamento. Tentaremos novamente; não repita o pagamento.");
+        if (failures >= 3) { setPollPaused(true); return; }
+      } finally { clearTimeout(timeout); }
+      if (!stopped) timer = setTimeout(poll, Math.min(10000 * (2 ** failures), 60000, Math.max(1, deadline - Date.now())));
+    };
+    timer = setTimeout(poll, Math.max(1, Math.min(10000, deadline - Date.now())));
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+      clearTimeout(timeout);
+      controller?.abort();
+    };
+  }, [watchedPix, watchedSeq, returnedFromGateway, needsReview, bookingClosed, reservation?.paymentStatus, fetchReservation, applyReservation, pollRetry, pollPaused]);
+
+  function applyReview(data: { paymentStatus?: string; status?: string; review?: boolean }) {
+    if (data.paymentStatus !== "REVIEW" && data.status !== "PAYMENT_REVIEW" && !data.review) return false;
+    paymentBlocked.current = true;
+    reviewWasActive.current = true;
+    cardSubmitLocked.current = true;
+    setPaymentReview(true);
+    setCardPending(false);
+    setCardSuccess("");
+    setPixData(null);
+    setInstallPixData(null);
+    return true;
+  }
 
   useEffect(() => {
-    fetch("/api/public/pagbank-config")
+    guestFetch("/api/public/pagbank-config")
       .then(r => {
         if (!r.ok) throw new Error("Falha ao carregar configuração de pagamento");
         return r.json();
@@ -477,16 +624,17 @@ export default function PagarPage() {
   // ── Handlers ──────────────────────────────────────────────────────────
 
   async function handleGeneratePix() {
-    if (!reservation) return;
+    if (!reservation || paymentBlocked.current || generatingPix) return;
     setGeneratingPix(true);
     setPixError("");
     try {
-      const res = await fetch("/api/public/payments/pagbank-pix", {
+      const res = await guestFetch("/api/public/payments/pagbank-pix", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code: reservation.code, cpf: cpfPix }),
       });
       const data = await res.json();
+      if (applyReview(data)) return;
       if (!res.ok) {
         // O banco exige CPF do pagador; sem ele nem chega a gerar a cobrança
         if (data.precisaCpf) setPedindoCpf(true);
@@ -494,7 +642,11 @@ export default function PagarPage() {
         return;
       }
       setPedindoCpf(false);
+      setPollPaused(false);
+      setPollNotice("");
       setPixData({ chargeId: data.chargeId, pixText: data.pixText, pixImageLink: data.pixImageLink, expiresAt: data.expiresAt });
+    } catch {
+      setPixError("Não foi possível gerar o PIX. Verifique sua conexão e tente consultar o status da reserva.");
     } finally {
       setGeneratingPix(false);
     }
@@ -505,16 +657,17 @@ export default function PagarPage() {
    * Os dados do cartão não passam por este site.
    */
   async function handleCardCheckout() {
-    if (!reservation) return;
+    if (!reservation || paymentBlocked.current || cardSubmitting) return;
     setCardSubmitting(true);
     setCardError("");
     try {
-      const res = await fetch("/api/public/payments/pagarme-checkout", {
+      const res = await guestFetch("/api/public/payments/pagarme-checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code: reservation.code, cpf: cpfPix }),
       });
       const data = await res.json();
+      if (applyReview(data)) return;
       if (!res.ok || !data.paymentUrl) {
         setCardError(data.error || "Nao foi possivel abrir o pagamento");
         return;
@@ -537,18 +690,19 @@ export default function PagarPage() {
   }
 
   async function handleCardSubmit(cardData: { encryptedCard: string; holderName: string; holderCpf: string; installments: number }) {
-    if (!reservation || cardSubmitLocked.current) return;
+    if (!reservation || paymentBlocked.current || cardSubmitLocked.current) return;
     cardSubmitLocked.current = true;
     let keepPaymentLocked = false;
     setCardSubmitting(true);
     setCardError("");
     try {
-      const res = await fetch("/api/public/payments/pagbank-card", {
+      const res = await guestFetch("/api/public/payments/pagbank-card", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code: reservation.code, ...cardData }),
       });
       const data = await res.json();
+      if (applyReview(data)) { keepPaymentLocked = true; return; }
       if (!res.ok || data.error || data.paymentStatus === "FAILED") {
         setCardError(data.error || "Pagamento recusado. Verifique os dados ou tente outro cartão.");
         return;
@@ -556,7 +710,7 @@ export default function PagarPage() {
       if (data.paymentStatus === "PAID") {
         keepPaymentLocked = true;
         setCardSuccess("Pagamento aprovado!");
-        setTimeout(() => loadReservation(), 1500);
+        refreshTimer.current = setTimeout(() => loadReservation(), 1500);
       } else if (data.paymentStatus === "PENDING") {
         keepPaymentLocked = true;
         setCardPending(true);
@@ -572,68 +726,86 @@ export default function PagarPage() {
   }
 
   async function handleInstallmentPix(item: InstallmentItem) {
-    if (!reservation) return;
+    if (!reservation || paymentBlocked.current) return;
     setActiveSeq(item.seq);
     setInstallPayMethod("pix");
     setInstallPixData(null);
   }
 
   async function handleInstallmentPixGenerate(item: InstallmentItem) {
-    if (!reservation) return;
+    if (!reservation || paymentBlocked.current || generatingPix) return;
     setGeneratingPix(true);
     setPixError("");
     try {
-      const res = await fetch("/api/public/payments/pay-installment", {
+      const res = await guestFetch("/api/public/payments/pay-installment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: reservation.code, seq: item.seq, method: "pix" }),
+        body: JSON.stringify({ code: reservation.code, seq: item.seq, method: "pix", cpf: cpfPix }),
       });
       const data = await res.json();
-      if (!res.ok) { setPixError(data.error || "Erro ao gerar PIX"); return; }
+      if (applyReview(data)) return;
+      if (!res.ok) { if (data.precisaCpf) setPedindoCpf(true); setPixError(data.error || "Erro ao gerar PIX"); return; }
       if (data.pixText) {
+        setPedindoCpf(false);
+        setPollPaused(false);
+        setPollNotice("");
         setInstallPixData({ chargeId: data.chargeId, pixText: data.pixText, pixImageLink: data.pixImageLink, expiresAt: data.pixExpiresAt });
       }
       if (data.installmentPaid) {
-        setTimeout(() => { loadReservation(); setActiveSeq(null); setInstallPixData(null); }, 2000);
+        refreshTimer.current = setTimeout(() => { loadReservation(); setActiveSeq(null); setInstallPixData(null); }, 2000);
       }
+    } catch {
+      setPixError("Não foi possível consultar a geração do PIX. Verifique o status antes de tentar novamente.");
     } finally {
       setGeneratingPix(false);
     }
   }
 
   async function handleInstallmentCard(item: InstallmentItem, cardData: { encryptedCard: string; holderName: string; holderCpf: string; installments: number }) {
-    if (!reservation) return;
+    if (!reservation || paymentBlocked.current || cardSubmitLocked.current) return;
+    cardSubmitLocked.current = true;
+    let keepPaymentLocked = false;
     setCardSubmitting(true);
     setCardError("");
     try {
-      const res = await fetch("/api/public/payments/pay-installment", {
+      const res = await guestFetch("/api/public/payments/pay-installment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code: reservation.code, seq: item.seq, method: "card", ...cardData }),
       });
       const data = await res.json();
-      if (!res.ok) { setCardError(data.error || "Pagamento recusado"); return; }
+      if (applyReview(data)) { keepPaymentLocked = true; return; }
+      if (!res.ok || data.error || data.paymentStatus === "FAILED") { setCardError(data.error || "Pagamento recusado"); return; }
       if (data.installmentPaid) {
-        setTimeout(() => { loadReservation(); setActiveSeq(null); }, 1500);
+        keepPaymentLocked = true;
+        refreshTimer.current = setTimeout(async () => {
+          await loadReservation(); setActiveSeq(null); cardSubmitLocked.current = false;
+        }, 1500);
+      } else {
+        keepPaymentLocked = true;
+        setCardPending(true);
       }
+    } catch {
+      setCardError("Falha de conexão ao processar o cartão. Verifique o status antes de tentar novamente.");
     } finally {
+      if (!keepPaymentLocked) cardSubmitLocked.current = false;
       setCardSubmitting(false);
     }
   }
 
   async function handleUploadReceipt(seq: number, file: File) {
-    if (!reservation) return;
+    if (!reservation || paymentBlocked.current) return;
     setUploadingSeq(seq);
     try {
       const fd = new FormData();
       fd.append("code", reservation.code);
       fd.append("seq", String(seq));
       fd.append("file", file);
-      const res = await fetch("/api/public/payments/upload-receipt", { method: "POST", body: fd });
+      const res = await guestFetch("/api/public/payments/upload-receipt", { method: "POST", body: fd });
       const data = await res.json();
       if (res.ok && data.ok) {
         setUploadSuccess(seq);
-        setTimeout(() => { setUploadSuccess(null); loadReservation(); }, 2000);
+        refreshTimer.current = setTimeout(() => { setUploadSuccess(null); loadReservation(); }, 2000);
       }
     } catch { } finally {
       setUploadingSeq(null);
@@ -641,15 +813,16 @@ export default function PagarPage() {
   }
 
   async function handleCreatePlan() {
-    if (!reservation) return;
+    if (!reservation || paymentBlocked.current || creatingPlan) return;
     setCreatingPlan(true);
     try {
-      const res = await fetch("/api/public/payments/installment-plan", {
+      const res = await guestFetch("/api/public/payments/installment-plan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code: reservation.code, numInstallments: selectedInstallments }),
       });
       const data = await res.json();
+      if (applyReview(data)) return;
       if (!res.ok) { alert(data.error || "Erro ao criar plano"); return; }
       setPlanCreated(true);
       await loadReservation();
@@ -670,13 +843,14 @@ export default function PagarPage() {
       <div className="text-center">
         <AlertTriangle className="w-12 h-12 text-amber-400 mx-auto mb-3" />
         <p className="text-slate-700 font-semibold">{error || "Reserva não encontrada"}</p>
+        <button onClick={loadReservation} className="mt-4 text-brand-700 underline">Tentar carregar novamente</button>
       </div>
     </div>
   );
 
-  const statusCfg = STATUS_CONFIG[reservation.paymentStatus as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.PENDING;
+  const statusCfg = needsReview ? STATUS_CONFIG.REVIEW : STATUS_CONFIG[reservation.paymentStatus as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.PENDING;
   const { Icon: StatusIcon } = statusCfg;
-  const isPaid = reservation.paymentStatus === "PAID";
+  const isPaid = reservation.paymentStatus === "PAID" && !needsReview && !bookingClosed;
   const isPartial = reservation.paymentStatus === "PARTIAL";
   const baseAmount = Number(reservation.totalAmount) - Number(reservation.cleaningFee);
   const plan = reservation.installmentPlan;
@@ -688,7 +862,7 @@ export default function PagarPage() {
     <div className="max-w-lg mx-auto px-4 py-8">
 
       {/* Return banners */}
-      {returnStatus === "success" && !isPaid && (
+      {returnStatus === "success" && !isPaid && !needsReview && !bookingClosed && (
         <div className="mb-5 p-4 bg-green-50 border border-green-200 rounded-2xl flex items-center gap-3">
           <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
           <div>
@@ -697,7 +871,7 @@ export default function PagarPage() {
           </div>
         </div>
       )}
-      {returnStatus === "failure" && (
+      {returnStatus === "failure" && !needsReview && !bookingClosed && (
         <div className="mb-5 p-4 bg-red-50 border border-red-200 rounded-2xl flex items-center gap-3">
           <XCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
           <p className="text-sm text-red-700 font-medium">Pagamento não aprovado. Tente novamente abaixo.</p>
@@ -750,7 +924,7 @@ export default function PagarPage() {
         </div>
         <div className="px-5 py-4 border-t border-slate-50 space-y-2">
           <Row
-            label={`Hospedagem (${reservation.nights} noite${reservation.nights > 1 ? "s" : ""})`}
+            label={`Hospedagem (${reservation.nights} diária${reservation.nights > 1 ? "s" : ""})`}
             value={fmt(baseAmount)}
           />
           {Number(reservation.cleaningFee) > 0 && (
@@ -763,12 +937,41 @@ export default function PagarPage() {
         </div>
       </div>
 
+      {needsReview && (
+        <div role="alert" className="mb-6 rounded-2xl border border-amber-300 bg-amber-50 p-5 text-amber-900">
+          <p className="font-bold">Seu pagamento precisa de conferência</p>
+          <p className="mt-2 text-sm">A administração precisa verificar o pagamento e a disponibilidade desta reserva. Não faça outro pagamento. Entre em contato com o responsável e informe o código {reservation.code}.</p>
+          <button onClick={loadReservation} className="mt-3 text-sm font-semibold underline">Verificar status</button>
+        </div>
+      )}
+      {!needsReview && bookingClosed && (
+        <div role="status" className="mb-6 rounded-2xl border border-slate-200 bg-slate-50 p-5 text-slate-700">
+          Esta reserva está encerrada ou cancelada. Fale com a administração antes de fazer qualquer pagamento.
+        </div>
+      )}
+      {!isPaid && !needsReview && !bookingClosed && (pollError || pollNotice || watchedPix) && (
+        <div role={pollError ? "alert" : "status"} className="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          <p>{pollError || pollNotice || "Acompanhando a confirmação do PIX automaticamente..."}</p>
+          <button onClick={async () => { await loadReservation(); setPollPaused(false); setPollRetry(value => value + 1); }} className="mt-2 font-semibold underline">
+            Verificar pagamento agora
+          </button>
+        </div>
+      )}
+      {cardPending && !isPaid && !needsReview && !bookingClosed && (
+        <div className="mb-6 bg-amber-50 border border-amber-200 rounded-2xl p-6 text-center" role="status">
+          <Clock className="w-12 h-12 text-amber-500 mx-auto mb-3" />
+          <p className="font-bold text-amber-800">Pagamento em análise</p>
+          <p className="text-xs text-amber-700 mt-1">A operadora ainda está analisando o pagamento. Aguarde a confirmação antes de fazer uma nova tentativa.</p>
+          <button onClick={loadReservation} className="mt-4 text-sm font-semibold text-amber-800 underline">Verificar status</button>
+        </div>
+      )}
+
       {/* ── PAYMENT SECTION ─────────────────────────────────────────── */}
-      {!isPaid && (
+      {!isPaid && !needsReview && !bookingClosed && !cardPending && (
         <div className="mb-6">
 
           {/* Mode selector */}
-          {!planCreated && maxInstallments >= 1 && !cardSubmitting && !cardPending && !cardSuccess && (
+          {!planCreated && maxInstallments >= 1 && !cardSubmitting && !cardPending && !cardSuccess && !pixData && !installPixData && (
             <div className="flex bg-slate-100 rounded-2xl p-1 mb-5">
               <button
                 onClick={() => { setPayMode("full"); setPixData(null); setCardError(""); setCardSuccess(""); }}
@@ -826,7 +1029,7 @@ export default function PagarPage() {
                   <div className="bg-white border border-slate-200 rounded-2xl p-5 text-center">
                     <QrCode size={40} className="text-brand-400 mx-auto mb-3" />
                     <p className="text-sm font-semibold text-slate-700 mb-1">Pague com PIX</p>
-                    <p className="text-xs text-slate-400 mb-4">Geração instantânea · Confirmação em até 1 min</p>
+                    <p className="text-xs text-slate-400 mb-4">Acompanhamento automático da confirmação</p>
 
                     <div className="text-left mb-4">
                       <label className="block text-xs font-semibold text-slate-600 mb-1.5">
@@ -921,19 +1124,6 @@ export default function PagarPage() {
                       </button>
                     </>
                   )}
-                </div>
-              )}
-
-              {cardPending && (
-                <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 text-center" role="status">
-                  <Clock className="w-12 h-12 text-amber-500 mx-auto mb-3" />
-                  <p className="font-bold text-amber-800">Pagamento em análise</p>
-                  <p className="text-xs text-amber-700 mt-1">
-                    A operadora ainda está analisando o pagamento. Aguarde a confirmação antes de fazer uma nova tentativa.
-                  </p>
-                  <button onClick={loadReservation} className="mt-4 text-sm font-semibold text-amber-800 underline">
-                    Verificar status
-                  </button>
                 </div>
               )}
 
@@ -1061,7 +1251,7 @@ export default function PagarPage() {
                               {item.label}
                             </p>
                             <p className="text-xs text-slate-400">
-                              {item.paid ? `Pago em ${fmtDateISO(item.paidAt!)}` : `Vence em ${fmtDateISO(item.dueDate)}`}
+                              {item.paid ? (item.paidAt ? `Pago em ${fmtDateISO(item.paidAt)}` : "Pagamento confirmado") : `Vence em ${fmtDateISO(item.dueDate)}`}
                             </p>
                           </div>
                         </div>
@@ -1110,9 +1300,16 @@ export default function PagarPage() {
                           {installPayMethod === "pix" && !installPixData && (
                             <>
                               {pixError && <p className="text-xs text-red-600 bg-red-50 rounded-xl p-2">{pixError}</p>}
+                              <label className="block text-xs font-semibold text-slate-600">
+                                CPF do pagador
+                                <input inputMode="numeric" autoComplete="off" value={cpfPix}
+                                  onChange={event => setCpfPix(formatarCpf(event.target.value))}
+                                  placeholder="000.000.000-00"
+                                  className={`mt-1 block w-full border rounded-xl px-3 py-2.5 text-sm font-mono ${pedindoCpf ? "border-red-300 bg-red-50" : "border-slate-200"}`} />
+                              </label>
                               <button
                                 onClick={() => handleInstallmentPixGenerate(item)}
-                                disabled={generatingPix}
+                                disabled={generatingPix || cpfPix.replace(/\D/g, "").length !== 11}
                                 className="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white text-sm font-bold py-2.5 rounded-xl flex items-center justify-center gap-2 transition-colors"
                               >
                                 {generatingPix ? <Loader2 size={15} className="animate-spin" /> : <QrCode size={15} />}
@@ -1162,7 +1359,7 @@ export default function PagarPage() {
                       <div className="mt-2">
                         {item.receiptUrl ? (
                           <a
-                            href={item.receiptUrl}
+                            href={guestLink(item.receiptUrl)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-1.5 text-xs text-green-600 bg-green-50 rounded-lg px-2.5 py-1 hover:bg-green-100 transition-colors"

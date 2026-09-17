@@ -32,6 +32,7 @@ export function ehChaveDeTeste(apiKey: string): boolean {
 
 export interface DadosCobranca {
   referencia: string;
+  idempotencyKey?: string;
   valorReais: number;
   nome: string;
   email: string;
@@ -62,7 +63,7 @@ export async function criarLinkCartao(
   dados: DadosCobranca
 ): Promise<LinkCriado> {
   const centavos = Math.round(dados.valorReais * 100);
-  const validadeMin = 1440; // 24h para o hóspede concluir
+  const validadeMin = 120; // 24h para o hóspede concluir
   const maxParcelas = Math.max(1, Math.min(12, dados.maxParcelas ?? 6));
   const tel = separarTelefone(dados.telefone);
 
@@ -113,7 +114,7 @@ export async function criarLinkCartao(
 
   const res = await fetch(`${PAGARME_API}/orders`, {
     method: "POST",
-    headers: cabecalhos(apiKey),
+    headers: { ...cabecalhos(apiKey), ...(dados.idempotencyKey ? { "Idempotency-Key": dados.idempotencyKey } : {}) },
     body: JSON.stringify(body),
   });
 

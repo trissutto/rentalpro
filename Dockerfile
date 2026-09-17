@@ -76,6 +76,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/node_modules/sharp ./node_modules
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@img ./node_modules/@img
 
 COPY --chown=nextjs:nodejs docker-entrypoint.sh ./docker-entrypoint.sh
+COPY --chown=nextjs:nodejs scripts/migrate-payment-receipts.cjs ./scripts/migrate-payment-receipts.cjs
 RUN chmod +x ./docker-entrypoint.sh
 
 EXPOSE 3000
