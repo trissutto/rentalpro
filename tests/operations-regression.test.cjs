@@ -94,7 +94,7 @@ test("session cache purge removes cached content before completion and worker ac
   const caches = { keys: async () => [...stored], delete: async name => stored.delete(name) };
   await load("src/lib/client-cache.ts", {}, { caches }).clearSessionCaches();
   assert.equal(stored.size, 0);
-  stored.add("offlineCache"); stored.add("public-static");
+  stored.add("offlineCache"); stored.add("start-url"); stored.add("public-static");
   let activate;
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../worker/index.js"), "utf8"), {
     caches, self: { addEventListener: (name, callback) => { if (name === "activate") activate = callback; } },
@@ -102,4 +102,5 @@ test("session cache purge removes cached content before completion and worker ac
   let completed;
   activate({ waitUntil: promise => { completed = promise; } }); await completed;
   assert.equal(stored.has("offlineCache"), false); assert.equal(stored.has("public-static"), true);
+  assert.equal(stored.has("start-url"), false);
 });
