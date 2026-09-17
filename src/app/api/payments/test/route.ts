@@ -8,6 +8,7 @@ const PB_API = "https://api.pagseguro.com";
 export async function GET(req: NextRequest) {
   const user = await getAuthUser(req);
   if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+  if (user.role !== "ADMIN") return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
 
   let rawToken: string | null = null;
   try {
@@ -32,33 +33,34 @@ export async function GET(req: NextRequest) {
   const token = limparToken(rawToken);
   const tokenInfo = {
     length: token.length,
-    prefix: token.slice(0, 8) + "...",
     hasSpaces: rawToken !== token,
   };
 
-  // Test: POST /public-keys — valid endpoint for integration token validation
+  // Validation is read-only: never rotate a key shared with another application.
   let pbOk = false;
   let pbError: string | null = null;
   let pbPublicKey: string | null = null;
   try {
-    const res = await fetch(`${PB_API}/public-keys`, {
-      method: "POST",
+    const res = await fetch(`${PB_API}/public-keys/card`, {
+      method: "GET",
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ type: "card" }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(10_000),
     });
     const data = await res.json();
-    if (res.ok && data.public_key) {
+    if (res.ok && typeof data.public_key === "string" && data.public_key.trim()) {
       pbOk = true;
-      pbPublicKey = data.public_key;
+      const key: string = data.public_key.trim();
+      pbPublicKey = key;
       // Auto-save public key to DB so payment page works immediately
       try {
         await prisma.setting.upsert({
           where: { key: "pagbank_public_key" },
-          update: { value: pbPublicKey },
-          create: { key: "pagbank_public_key", value: pbPublicKey },
+          update: { value: key },
+          create: { key: "pagbank_public_key", value: key },
         });
       } catch { /* ignore save error, key still returned */ }
     } else {

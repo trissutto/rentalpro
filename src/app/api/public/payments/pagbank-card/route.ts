@@ -1,3 +1,5 @@
+import { beginPaymentAttempt, savePaymentAttempt, reconcilePayment, PaymentError } from "@/lib/payment-integrity";
+import { authorizeGuestRequest } from "@/lib/guest-access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { limparToken } from "@/lib/pagbank";
@@ -13,6 +15,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Dados incompletos" }, { status: 400 });
     }
 
+    const denied = await authorizeGuestRequest(req, String(code), "payments:write");
+    if (denied) return denied;
+    if (!Number.isInteger(Number(installments)) || Number(installments) < 1 || Number(installments) > 6) return NextResponse.json({ error: "Selecione entre 1 e 6 parcelas." }, { status: 400 });
     // Load reservation
     const reservation = await prisma.reservation.findUnique({
       where: { code: String(code).toUpperCase() },
@@ -34,8 +39,9 @@ export async function POST(req: NextRequest) {
     const isLocalhost = reqUrl.hostname === "localhost" || reqUrl.hostname === "127.0.0.1";
     const origin = process.env.NEXT_PUBLIC_BASE_URL || `${reqUrl.protocol}//${reqUrl.host}`;
 
-    const amountCents = Math.round(Number(reservation.totalAmount) * 100);
-    const numInstallments = Math.max(1, Math.min(12, Number(installments)));
+    const attempt = await beginPaymentAttempt(reservation.id, "pagbank", "card");
+    const amountCents = attempt.amountCents;
+    const numInstallments = Number(installments);
 
     const payload: Record<string, unknown> = {
       reference_id: reservation.code,
@@ -64,14 +70,14 @@ export async function POST(req: NextRequest) {
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${token}`,
-        "x-idempotency-key": `${reservation.code}-card-${Date.now()}`,
+        "x-idempotency-key": attempt.key,
       },
       body: JSON.stringify(payload),
     });
 
     const charge = await pbRes.json();
     if (!pbRes.ok) {
-      console.error("PagBank card error:", JSON.stringify(charge));
+      console.error("PagBank card error:", "Gateway rejeitou a solicitação");
       const errObj = charge.error_messages?.[0];
       const msg = errObj
         ? `${errObj.description || "erro"} (${errObj.parameter_name || errObj.code || "unknown"})`
@@ -79,67 +85,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: msg, pagbankStatus: charge.status, details: errObj }, { status: pbRes.status });
     }
 
-    // Check if charge was declined
-    if (charge.status === "DECLINED" || charge.status === "CANCELED") {
-      const reason = charge.payment_response?.message || "Pagamento recusado pela operadora";
-      const code = charge.payment_response?.code || "";
-      return NextResponse.json({
-        error: `${reason}${code ? ` (${code})` : ""}`,
-        chargeId: charge.id,
-        status: charge.status,
-        paymentStatus: "FAILED",
-        message: reason,
-      });
-    }
-
-    // Map PagBank status → internal status
-    const statusMap: Record<string, string> = {
-      PAID: "PAID",
-      AVAILABLE: "PAID",
-      AUTHORIZED: "PAID",
-      IN_ANALYSIS: "PENDING",
-      WAITING: "PENDING",
-      DECLINED: "FAILED",
-      CANCELED: "FAILED",
-    };
-    const paymentStatus = statusMap[charge.status] || "PENDING";
-    const installLabel = numInstallments > 1
-      ? `Cartão de Crédito (${numInstallments}x)`
-      : "Cartão de Crédito";
-
-    await prisma.reservation.update({
-      where: { id: reservation.id },
-      data: {
-        mpPaymentId: charge.id,
-        paymentStatus,
-        paymentMethod: installLabel,
-        paidAt: paymentStatus === "PAID" ? new Date() : undefined,
-        ...(paymentStatus === "PAID" && reservation.status === "PENDING"
-          ? { status: "CONFIRMED" }
-          : {}),
-      },
-    });
-
-    // Create financial transaction if paid
-    if (paymentStatus === "PAID") {
-      const existing = await prisma.financialTransaction.findFirst({
-        where: { reservationId: reservation.id, category: "RESERVATION_INCOME" },
-      });
-      if (!existing) {
-        await prisma.financialTransaction.create({
-          data: {
-            reservationId: reservation.id,
-            propertyId: reservation.propertyId,
-            type: "INCOME",
-            category: "RESERVATION_INCOME",
-            description: `Reserva ${reservation.code} - ${reservation.guestName} (${installLabel})`,
-            amount: Number(reservation.totalAmount),
-            isPaid: true,
-            paidAt: new Date(),
-          },
-        });
-      }
-    }
+    await savePaymentAttempt(reservation.id, attempt, charge.id);
+    const { paymentStatus } = await reconcilePayment("pagbank", charge.id);
 
     return NextResponse.json({
       chargeId: charge.id,
@@ -149,9 +96,10 @@ export async function POST(req: NextRequest) {
         ? "Pagamento aprovado!"
         : paymentStatus === "PENDING"
           ? "Pagamento em análise"
-          : "Pagamento recusado",
+          : paymentStatus === "REVIEW" ? "Pagamento recebido; a administração precisa conferir sua reserva." : "Pagamento recusado",
     });
   } catch (err) {
+    if (err instanceof PaymentError) return NextResponse.json({ error: err.message }, { status: err.status });
     console.error("pagbank-card error:", err);
     return NextResponse.json({ error: "Erro interno ao processar cartão" }, { status: 500 });
   }

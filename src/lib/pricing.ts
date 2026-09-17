@@ -29,7 +29,7 @@ const KNOWN_HOLIDAYS = new Set([
   "2027-11-15","2027-11-20","2027-12-25",
 ]);
 
-interface PricingRule {
+export interface PricingRule {
   id: string;
   name: string;
   type: string;
@@ -40,6 +40,7 @@ interface PricingRule {
   value: number;
   priority: number;
   active: boolean;
+  minNights?: number;
 }
 
 export interface NightPrice {
@@ -64,7 +65,7 @@ export function calculateDynamicTotal(
   basePrice: number,
   rules: PricingRule[]
 ): { total: number; nights: NightPrice[] } {
-  const activeRules = rules.filter(r => r.active);
+  const activeRules = rules.filter(r => r.active && r.type !== "PACKAGE");
   const result: NightPrice[] = [];
 
   // Iterate from checkIn to checkOut INCLUSIVE (diárias model)
@@ -96,7 +97,7 @@ function applyBestRule(date: Date, basePrice: number, rules: PricingRule[]): Nig
     .sort((a, b) => b.priority - a.priority);
 
   if (matching.length === 0) {
-    return { date: dateStr, basePrice, finalPrice: basePrice };
+    return { date: dateStr, basePrice, finalPrice: roundMoney(basePrice) };
   }
 
   const rule = matching[0];
@@ -106,7 +107,7 @@ function applyBestRule(date: Date, basePrice: number, rules: PricingRule[]): Nig
   // (PACKAGE total is applied separately at the booking level when the full range matches.)
   const finalPrice =
     rule.priceType === "FIXED" || rule.priceType === "PACKAGE"
-      ? rule.value
+      ? roundMoney(rule.value)
       : Math.round(basePrice * rule.value * 100) / 100;
 
   return { date: dateStr, basePrice, finalPrice, ruleName: rule.name };
@@ -163,4 +164,64 @@ export function formatRuleDescription(rule: PricingRule): string {
     return `${s} – ${e} → ${pricePart}`;
   }
   return pricePart;
+}
+
+export class PricingError extends Error {
+  constructor(message: string, public readonly status = 422) { super(message); this.name = "PricingError"; }
+}
+
+export const roundMoney = (value: number): number => Math.round((value + Number.EPSILON) * 100) / 100;
+
+export function parseReservationDate(value: unknown): Date {
+  const text = value instanceof Date ? value.toISOString().slice(0, 10) : value;
+  if (typeof text !== "string" || !/^\d{4}-\d{2}-\d{2}(?:T00:00:00(?:\.000)?Z)?$/.test(text)) throw new PricingError("Informe uma data válida no formato AAAA-MM-DD.", 400);
+  const day = text.slice(0, 10);
+  const date = new Date(day + "T00:00:00.000Z");
+  if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== day) throw new PricingError("Data inválida.", 400);
+  return date;
+}
+
+export function parseReservationStay(checkIn: unknown, checkOut: unknown, allowPast = true) {
+  const ci = parseReservationDate(checkIn), co = parseReservationDate(checkOut);
+  const nightCount = Math.round((co.getTime() - ci.getTime()) / 86400000);
+  if (nightCount < 0 || nightCount > 365) throw new PricingError("Selecione um período válido de até 366 diárias.", 400);
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+  if (!allowPast && ci.toISOString().slice(0, 10) < today) throw new PricingError("Não é possível reservar datas passadas.", 400);
+  return { checkIn: ci, checkOut: co, nightCount, diarias: nightCount + 1 };
+}
+
+export interface PricingProperty {
+  basePrice: number; cleaningFee: number; commissionRate: number;
+  idealGuests: number; maxGuests: number; extraGuestFee: number; pricingRules: PricingRule[];
+}
+
+export function calculateReservationQuote(property: PricingProperty, checkIn: Date, checkOut: Date, guests: unknown, manualTotal?: unknown) {
+  const stay = parseReservationStay(checkIn, checkOut);
+  const guestCount = typeof guests === "number" || typeof guests === "string" ? Number(guests) : NaN;
+  if (!Number.isInteger(guestCount) || guestCount < 1 || guestCount > property.maxGuests) throw new PricingError(`Informe de 1 a ${property.maxGuests} hóspedes.`);
+  if (![property.basePrice, property.cleaningFee, property.extraGuestFee, property.commissionRate].every(n => Number.isFinite(n) && n >= 0) || property.commissionRate > 100) throw new PricingError("As tarifas do imóvel precisam ser revisadas.", 503);
+  let minRequired = 1;
+  for (const rule of property.pricingRules.filter(rule => rule.active)) {
+    if (!["PACKAGE", "WEEKEND"].includes(rule.type)) continue;
+    if (ruleMatches(rule, checkIn, toDateStr(checkIn), checkIn.getUTCDay())) minRequired = Math.max(minRequired, rule.minNights ?? 1);
+  }
+  if (stay.diarias < minRequired) throw new PricingError(`Estadia mínima para este período: ${minRequired} diárias.`);
+  const dynamic = calculateDynamicTotal(checkIn, checkOut, property.basePrice, property.pricingRules);
+  if (!Number.isFinite(dynamic.total) || dynamic.nights.some(day => day.finalPrice < 0)) throw new PricingError("As tarifas do imóvel precisam ser revisadas.", 503);
+  const extraGuestTotal = roundMoney(Math.max(0, guestCount - property.idealGuests) * property.extraGuestFee * stay.diarias);
+  const cleaningFee = roundMoney(property.cleaningFee);
+  const totalAmount = manualTotal === undefined ? roundMoney(dynamic.total + extraGuestTotal + cleaningFee) : roundMoney(Number(manualTotal));
+  if (!Number.isFinite(totalAmount) || totalAmount <= 0) throw new PricingError("O total deve ser um valor positivo.");
+  const commission = roundMoney(totalAmount * property.commissionRate / 100);
+  const ownerAmount = roundMoney(totalAmount - commission - cleaningFee);
+  if (ownerAmount < 0) throw new PricingError("O total não cobre a limpeza e a comissão.");
+  const groups: { label: string; count: number; unitPrice: number; subtotal: number }[] = [];
+  for (const day of dynamic.nights) {
+    const label = day.ruleName ?? "Diária padrão", last = groups[groups.length - 1];
+    if (last && last.label === label && last.unitPrice === day.finalPrice) { last.count++; last.subtotal = roundMoney(last.subtotal + day.finalPrice); }
+    else groups.push({ label, count: 1, unitPrice: day.finalPrice, subtotal: day.finalPrice });
+  }
+  return { totalAmount, accommodationTotal: dynamic.total, cleaningFee, extraGuestTotal, commission, ownerAmount,
+    guestCount, diarias: stay.diarias, nightCount: stay.nightCount, basePrice: property.basePrice, groups,
+    hasVariation: dynamic.total !== roundMoney(property.basePrice * stay.diarias), minRequired, usingDefaults: false };
 }

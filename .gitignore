@@ -44,4 +44,7 @@ ecosystem.config.js.local
 
 # Uploads temporários
 public/uploads/tmp/
+public/uploads/receipts/
+**/private-receipts/
+**/legacy-receipts-before-audit/
 prisma/dev.db

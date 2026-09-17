@@ -1,5 +1,7 @@
 "use client";
 
+import { useGuestAccess } from "@/hooks/useGuestAccess";
+
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { motion } from "framer-motion";
@@ -22,6 +24,7 @@ interface AccessInfo {
 }
 
 interface ReservationInfo {
+  checkInEligibility: { allowed: boolean; reason: string; opensAt: string | null; closesAt: string | null };
   guestName: string;
   guestCount: number;
   checkIn: string;
@@ -31,12 +34,14 @@ interface ReservationInfo {
 }
 
 export default function CheckinPage() {
+  const { guestFetch, guestLink } = useGuestAccess();
   const { code } = useParams();
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
   const [accessInfo, setAccessInfo] = useState<AccessInfo | null>(null);
   const [reservation, setReservation] = useState<ReservationInfo | null>(null);
   const [loadingRes, setLoadingRes] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   const [arrivalTime, setArrivalTime] = useState("");
   const [observations, setObservations] = useState("");
@@ -45,13 +50,14 @@ export default function CheckinPage() {
   ]);
 
   useEffect(() => {
-    fetch(`/api/public/reservation?code=${code}`)
-      .then((r) => r.json())
+    guestFetch(`/api/public/reservation?code=${code}`)
+      .then(async (r) => { const data = await r.json(); if (!r.ok) throw new Error(data.error || "Não foi possível consultar sua reserva"); return data; })
       .then((data) => {
         if (data.reservation) setReservation(data.reservation);
       })
+      .catch(err => setLoadError(err instanceof Error ? err.message : "Não foi possível consultar sua reserva"))
       .finally(() => setLoadingRes(false));
-  }, [code]);
+  }, [code, guestFetch]);
 
   function addGuest() {
     setGuests((prev) => [...prev, { name: "", birthDate: "", docType: "CPF", docNumber: "" }]);
@@ -67,14 +73,15 @@ export default function CheckinPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!reservation?.checkInEligibility.allowed) { toast.error("Check-in ainda não disponível"); return; }
     if (!arrivalTime) { toast.error("Informe o horário de chegada"); return; }
-    if (guests.some((g) => !g.name || !g.docNumber)) {
-      toast.error("Preencha nome e documento de todos os hóspedes");
+    if (guests.some((g) => !g.name || !g.docNumber || !g.birthDate)) {
+      toast.error("Preencha nome, nascimento e documento de todos os hóspedes");
       return;
     }
     setSubmitting(true);
     try {
-      const res = await fetch("/api/public/checkin", {
+      const res = await guestFetch("/api/public/checkin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code, guests, arrivalTime, observations }),
@@ -159,11 +166,11 @@ export default function CheckinPage() {
 
       {/* Contract link */}
       <div className="flex gap-3">
-        <Link href={`/reserva/${code}`}
+        <Link href={guestLink(`/reserva/${code}`)}
           className="flex-1 block text-center bg-brand-600 hover:bg-brand-700 text-white font-bold py-3.5 rounded-2xl transition-colors text-sm">
           Ver reserva
         </Link>
-        <a href={`/api/public/contract/${code}`} target="_blank" rel="noreferrer"
+        <a href={guestLink(`/api/public/contract/${code}`)} target="_blank" rel="noreferrer"
           className="flex-1 block text-center border border-slate-200 hover:border-brand-400 hover:text-brand-700 text-slate-600 font-semibold py-3.5 rounded-2xl transition-colors text-sm">
           📄 Contrato PDF
         </a>
@@ -196,11 +203,20 @@ export default function CheckinPage() {
 
         <div className="bg-blue-50 rounded-2xl p-4 mb-6 border border-blue-100">
           <p className="text-sm text-blue-700">
-            🎉 Preencha os dados de chegada com antecedência para que tudo esteja pronto ao chegar!
+            O acesso ao imóvel é liberado no horário do check-in, após a confirmação do pagamento integral.
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
+        {loadingRes ? <p role="status">Consultando reserva...</p> : loadError ? (
+          <p role="alert" className="text-red-700">{loadError}. Use o link completo enviado pela administração.</p>
+        ) : !reservation?.checkInEligibility.allowed ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
+            <p>{reservation?.checkInEligibility.reason || "Check-in indisponível para esta reserva."}</p>
+            {reservation?.checkInEligibility.opensAt && <p className="mt-2">Abertura: {new Date(reservation.checkInEligibility.opensAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })} (horário de São Paulo).</p>}
+            <Link className="block mt-4 font-semibold underline" href={guestLink(`/reserva/${code}/hospedes`)}>Preencher cadastro antecipado dos hóspedes</Link>
+            <Link className="block mt-3 underline" href={guestLink(`/reserva/${code}`)}>Acompanhar reserva e pagamento</Link>
+          </div>
+        ) : <form onSubmit={handleSubmit} className="space-y-5">
           {/* Arrival time */}
           <div>
             <label className="block text-sm font-semibold text-slate-700 mb-1.5">
@@ -223,7 +239,7 @@ export default function CheckinPage() {
                 <Users size={14} className="inline mr-1.5 text-slate-400" />
                 Dados dos hóspedes *
               </label>
-              <button type="button" onClick={addGuest}
+              <button type="button" disabled={guests.length >= (reservation?.guestCount || 1)} onClick={addGuest}
                 className="flex items-center gap-1 text-xs font-semibold text-brand-600 hover:text-brand-800 transition">
                 <Plus size={13} /> Adicionar
               </button>
@@ -255,6 +271,8 @@ export default function CheckinPage() {
                     <div className="grid grid-cols-2 gap-2">
                       <input
                         type="date"
+                        required
+                        aria-label="Data de nascimento"
                         placeholder="Data de nascimento"
                         value={g.birthDate}
                         onChange={(e) => setGuest(i, "birthDate", e.target.value)}
@@ -318,7 +336,7 @@ export default function CheckinPage() {
               : "✅ Confirmar chegada"
             }
           </button>
-        </form>
+        </form>}
       </motion.div>
     </div>
   );

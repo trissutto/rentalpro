@@ -1,5 +1,7 @@
 "use client";
 
+import { withGuestAccess } from "@/hooks/useGuestAccess";
+
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
@@ -173,54 +175,8 @@ function parseJSON(val: string | string[]): string[] {
   try { return JSON.parse(val); } catch { return []; }
 }
 
-// ── Feriados nacionais Brasil 2025-2027 ────────────────────────────────────
-const KNOWN_HOLIDAYS_CLIENT = new Set([
-  "2025-01-01","2025-02-28","2025-03-01","2025-03-02",
-  "2025-04-18","2025-04-20","2025-04-21","2025-05-01",
-  "2025-06-19","2025-09-07","2025-10-12","2025-11-02",
-  "2025-11-15","2025-11-20","2025-12-25",
-  "2026-01-01","2026-02-13","2026-02-16","2026-02-17",
-  "2026-04-03","2026-04-05","2026-04-21","2026-05-01",
-  "2026-06-04","2026-09-07","2026-10-12","2026-11-02",
-  "2026-11-15","2026-11-20","2026-12-25",
-  "2027-01-01","2027-02-26","2027-03-01","2027-03-02",
-  "2027-03-26","2027-03-28","2027-04-21","2027-05-01",
-  "2027-06-24","2027-09-07","2027-10-12","2027-11-02",
-  "2027-11-15","2027-11-20","2027-12-25",
-]);
-
 interface DynamicGroup { label: string; count: number; unitPrice: number; subtotal: number }
-
-function calcDynamicTotal(
-  checkIn: string, checkOut: string, basePrice: number,
-  holidayCoeff = 1.3, weekendCoeff = 1.2,
-): { total: number; hasVariation: boolean; groups: DynamicGroup[] } {
-  const days: { date: string; finalPrice: number; label: string }[] = [];
-  const cur = new Date(checkIn + "T12:00:00Z");
-  const end = new Date(checkOut + "T12:00:00Z");
-  while (cur <= end && days.length < 60) {
-    const ds  = cur.toISOString().slice(0, 10);
-    const dow = cur.getUTCDay();
-    let coeff = 1.0; let label = "Diária padrão";
-    if (KNOWN_HOLIDAYS_CLIENT.has(ds))      { coeff = holidayCoeff;  label = "Feriado"; }
-    else if ([0, 5, 6].includes(dow))       { coeff = weekendCoeff;  label = "Fim de semana"; }
-    days.push({ date: ds, finalPrice: Math.round(basePrice * coeff * 100) / 100, label });
-    cur.setUTCDate(cur.getUTCDate() + 1);
-  }
-  const total    = Math.round(days.reduce((s, d) => s + d.finalPrice, 0) * 100) / 100;
-  const flatTotal = Math.round(basePrice * days.length * 100) / 100;
-  const hasVariation = Math.abs(total - flatTotal) > 0.01;
-  const groups: DynamicGroup[] = [];
-  for (const day of days) {
-    const last = groups[groups.length - 1];
-    if (last && last.label === day.label && Math.abs(last.unitPrice - day.finalPrice) < 0.01) {
-      last.count++; last.subtotal = Math.round((last.subtotal + day.finalPrice) * 100) / 100;
-    } else {
-      groups.push({ label: day.label, count: 1, unitPrice: day.finalPrice, subtotal: day.finalPrice });
-    }
-  }
-  return { total, hasVariation, groups };
-}
+interface ServerQuote { requestKey: string; totalAmount: number; accommodationTotal: number; cleaningFee: number; extraGuestTotal: number; diarias: number; nightCount: number; groups: DynamicGroup[] }
 
 // ── Availability Calendar ──────────────────────────────────────────────────
 const MONTH_NAMES = [
@@ -246,6 +202,8 @@ function getMinNightsForDate(dateStr: string, rules: MinNightsRule[]): number {
 }
 
 interface CalendarProps {
+  rangeStart: string;
+  rangeEnd: string;
   occupiedDates: Set<string>;
   minNightsRules: MinNightsRule[];
   checkIn: string;
@@ -255,7 +213,7 @@ interface CalendarProps {
 }
 
 function AvailabilityCalendar({
-  occupiedDates, minNightsRules,
+  occupiedDates, minNightsRules, rangeStart, rangeEnd,
   checkIn, checkOut,
   onSelectCheckIn, onSelectCheckOut,
 }: CalendarProps) {
@@ -303,7 +261,7 @@ function AvailabilityCalendar({
   }
 
   function handleDayClick(ds: string) {
-    if (ds < todayStr || occupiedDates.has(ds)) return;
+    if (ds < todayStr || ds < rangeStart || ds > rangeEnd || occupiedDates.has(ds)) return;
 
     if (!checkIn || !pickingOut) {
       // Primeiro clique: define check-in
@@ -356,14 +314,14 @@ function AvailabilityCalendar({
 
       {/* ── Navigation ── */}
       <div className="flex items-center justify-between px-4 py-3 bg-white border-b border-slate-100">
-        <button type="button" onClick={goPrev}
+        <button type="button" aria-label="Mês anterior" onClick={goPrev}
           className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-slate-100 text-slate-500 transition">
           <ChevronLeft size={18} />
         </button>
         <p className="text-sm font-bold text-slate-800 tracking-wide">
           {MONTH_NAMES[viewMonth]} {viewYear}
         </p>
-        <button type="button" onClick={goNext}
+        <button type="button" aria-label="Próximo mês" onClick={goNext}
           className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-slate-100 text-slate-500 transition">
           <ChevronRight size={18} />
         </button>
@@ -385,7 +343,7 @@ function AvailabilityCalendar({
           {grid.map((ds, idx) => {
             if (!ds) return <div key={`b${idx}`} />;
 
-            const isPast     = ds < todayStr;
+            const isPast     = ds < todayStr || ds < rangeStart || ds > rangeEnd;
             const isOccupied = occupiedDates.has(ds);
             const isCI       = ds === checkIn;
             const isCO       = ds === checkOut;
@@ -399,7 +357,7 @@ function AvailabilityCalendar({
             const isRangeStart = isCI  && checkOut;
             const isRangeEnd   = isCO  && checkIn;
 
-            let cellCls = "relative flex items-center justify-center h-9 text-sm transition-all select-none focus:outline-none ";
+            let cellCls = "relative flex items-center justify-center h-9 text-sm transition-all select-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-700 ";
 
             if (isCI || isCO) {
               cellCls += "bg-brand-600 text-white font-bold z-10 shadow-sm ";
@@ -422,6 +380,8 @@ function AvailabilityCalendar({
 
             return (
               <button key={ds} type="button"
+                aria-label={new Date(ds + "T12:00:00Z").toLocaleDateString("pt-BR", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })}
+                aria-pressed={isCI || isCO}
                 className={cellCls}
                 disabled={isPast || isOccupied}
                 onClick={() => handleDayClick(ds)}
@@ -480,7 +440,14 @@ export default function PropertyDetailPage() {
   // Availability data
   const [occupiedDates, setOccupiedDates] = useState<Set<string>>(new Set());
   const [minNightsRules, setMinNightsRules] = useState<MinNightsRule[]>([]);
-  const [pricingCoeffs, setPricingCoeffs] = useState({ holiday: 1.3, weekend: 1.2, weekday: 1.0 });
+  const [availError, setAvailError] = useState("");
+  const [availReady, setAvailReady] = useState(false);
+  const [availabilityVersion, setAvailabilityVersion] = useState(0);
+  const [coverage, setCoverage] = useState({ start: "", end: "" });
+  const [quote, setQuote] = useState<ServerQuote | null>(null);
+  const [quoteError, setQuoteError] = useState("");
+  const [quoteVersion, setQuoteVersion] = useState(0);
+  const [successToken, setSuccessToken] = useState("");
   const [availLoading, setAvailLoading] = useState(false);
 
   const [form, setForm] = useState({
@@ -502,20 +469,44 @@ export default function PropertyDetailPage() {
       .catch(() => setLoading(false));
   }, [slug]);
 
-  // Load availability once we have the property id
+  // Unknown availability must never be presented as free dates.
   useEffect(() => {
     if (!property?.id) return;
-    setAvailLoading(true);
-    fetch(`/api/public/availability?propertyId=${property.id}&months=6`)
-      .then(r => r.json())
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    let active = true;
+    setAvailLoading(true); setAvailReady(false); setAvailError("");
+    fetch(`/api/public/availability?propertyId=${property.id}&months=24`, { signal: controller.signal, cache: "no-store" })
+      .then(async r => { if (!r.ok) throw new Error("Disponibilidade indisponível"); return r.json(); })
       .then(data => {
-        setOccupiedDates(new Set(data.occupiedDates ?? []));
+        if (!Array.isArray(data.occupiedDates) || !data.rangeStart || !data.rangeEnd) throw new Error("Resposta inválida");
+        if (!active) return;
+        setOccupiedDates(new Set(data.occupiedDates));
         setMinNightsRules(data.minNightsRules ?? []);
-        if (data.pricingCoeffs) setPricingCoeffs(data.pricingCoeffs);
+        setCoverage({ start: data.rangeStart, end: data.rangeEnd });
+        setAvailReady(true);
       })
-      .catch(() => {})
-      .finally(() => setAvailLoading(false));
-  }, [property?.id]);
+      .catch(() => { if (active) setAvailError("Não foi possível consultar as datas. Tente novamente antes de reservar."); })
+      .finally(() => { clearTimeout(timeout); if (active) setAvailLoading(false); });
+    return () => { active = false; clearTimeout(timeout); controller.abort(); };
+  }, [property?.id, availabilityVersion]);
+
+  const quoteKey = JSON.stringify([property?.id, form.checkIn, form.checkOut, form.guestCount]);
+  useEffect(() => {
+    setQuote(null); setQuoteError("");
+    if (!property?.id || !form.checkIn || !form.checkOut || form.checkOut < form.checkIn) return;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    let active = true;
+    const query = new URLSearchParams({ propertyId: property.id, checkIn: form.checkIn, checkOut: form.checkOut, guestCount: String(form.guestCount) });
+    fetch("/api/public/pricing-preview?" + query, { signal: controller.signal, cache: "no-store" })
+      .then(async r => { const data = await r.json(); if (!r.ok) throw new Error(data.error || "Não foi possível calcular o valor"); return data.quote; })
+      .then(data => { if (!data || !Number.isFinite(data.totalAmount)) throw new Error("Cotação inválida"); if (active) setQuote({ ...data, requestKey: quoteKey }); })
+      .catch(e => { if (active) setQuoteError(e.name === "AbortError" ? "A consulta do valor demorou demais. Tente novamente." : e.message); })
+      .finally(() => clearTimeout(timeout));
+    return () => { active = false; clearTimeout(timeout); controller.abort(); };
+  }, [property?.id, form.checkIn, form.checkOut, form.guestCount, quoteKey, quoteVersion]);
+  const quoteReady = quote?.requestKey === quoteKey;
 
   const nights = form.checkIn && form.checkOut
     ? Math.ceil((new Date(form.checkOut).getTime() - new Date(form.checkIn).getTime()) / 86400000) + 1
@@ -525,14 +516,11 @@ export default function PropertyDetailPage() {
   const maxGuestsLimit = (property as unknown as Record<string, number>)?.maxGuests ?? property?.capacity ?? 30;
   const extraGuestFee = property?.extraGuestFee ?? 0;
   const extraGuests   = Math.max(0, form.guestCount - idealGuests);
-  const extraTotal    = extraGuests * extraGuestFee * nights;
+  const extraTotal    = quoteReady ? quote!.extraGuestTotal : 0;
 
-  const dynamicCalc = property && form.checkIn && form.checkOut
-    ? calcDynamicTotal(form.checkIn, form.checkOut, property.basePrice, pricingCoeffs.holiday, pricingCoeffs.weekend)
-    : null;
-
-  const accommodationTotal = dynamicCalc?.total ?? (property ? nights * property.basePrice : 0);
-  const total = property ? accommodationTotal + property.cleaningFee + extraTotal : 0;
+  const dynamicCalc = quoteReady ? { total: quote!.accommodationTotal, groups: quote!.groups, hasVariation: true } : null;
+  const accommodationTotal = quoteReady ? quote!.accommodationTotal : 0;
+  const total = quoteReady ? quote!.totalAmount : 0;
   const today = new Date().toISOString().split("T")[0];
 
   // Minimum nights validation
@@ -556,9 +544,11 @@ export default function PropertyDetailPage() {
   async function handleReserve(e: React.FormEvent) {
     e.preventDefault();
     if (!property) return;
+    if (!availReady || availError || !quoteReady) { toast.error("Aguarde a consulta das datas e do valor antes de reservar."); return; }
+    if (form.checkIn < coverage.start || form.checkOut > coverage.end) { toast.error("Datas fora do período de disponibilidade consultado."); return; }
     if (nights <= 0) { toast.error("Selecione datas válidas"); return; }
     if (minNightsViolated) {
-      toast.error(`Estadia mínima: ${minNightsRequired} noites${minNightsRuleName ? ` (${minNightsRuleName})` : ""}`);
+      toast.error(`Estadia mínima: ${minNightsRequired} diárias${minNightsRuleName ? ` (${minNightsRuleName})` : ""}`);
       return;
     }
     setSubmitting(true);
@@ -566,12 +556,13 @@ export default function PropertyDetailPage() {
       const res = await fetch("/api/public/reservation", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, propertyId: property.id }),
+        body: JSON.stringify({ ...form, propertyId: property.id, expectedTotal: quote!.totalAmount }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      if (!res.ok) { if (data.code === "PRICE_CHANGED") setQuoteVersion(v => v + 1); throw new Error(data.error); }
       setSuccessGuestCount(form.guestCount);
       setSuccess(data.reservation.code);
+      setSuccessToken(data.reservation.accessToken);
       toast.success("Reserva criada! Finalize o pagamento para confirmar.");
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Erro ao reservar");
@@ -607,18 +598,18 @@ export default function PropertyDetailPage() {
       <div className="bg-brand-50 rounded-2xl p-6 mb-3">
         <p className="text-sm text-brand-500 font-medium mb-1">CÓDIGO DA RESERVA</p>
         <p className="text-3xl font-bold text-brand-700 font-mono tracking-widest">{success}</p>
-        <p className="text-xs text-brand-400 mt-2">Guarde este código — você precisará dele para pagar e acompanhar</p>
+        <p className="text-xs text-brand-400 mt-2">Guarde o link de pagamento abaixo para acessar sua reserva com segurança</p>
       </div>
       <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-5 text-left">
         <p className="text-xs text-amber-700 font-semibold mb-0.5">⚠️ As datas ainda não estão confirmadas</p>
-        <p className="text-xs text-amber-600">Outro hóspede pode reservar as mesmas datas enquanto o pagamento não for finalizado.</p>
+        <p className="text-xs text-amber-600">As datas ficam reservadas temporariamente por até 2 horas. Conclua o pagamento dentro desse prazo.</p>
       </div>
       <div className="flex flex-col gap-3">
-        <a href={`/pagar/${success}`}
+        <a href={withGuestAccess(`/pagar/${success}`, successToken)}
           className="block bg-brand-600 text-white font-bold py-4 rounded-xl hover:bg-brand-700 transition-colors text-base shadow-sm">
           💳 Pagar agora e confirmar →
         </a>
-        <a href={`/reserva/${success}/hospedes`}
+        <a href={withGuestAccess(`/reserva/${success}/hospedes`, successToken)}
           className="block bg-slate-100 text-slate-700 font-semibold py-3 rounded-xl hover:bg-slate-200 transition-colors text-sm">
           Cadastrar dados dos hóspedes
         </a>
@@ -728,8 +719,8 @@ export default function PropertyDetailPage() {
                         ? new Date(form.checkOut + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })
                         : "…"}
                     </span>
-                    {nights > 0 && (
-                      <span className="ml-2 text-brand-600 font-bold">· {nights} noite{nights > 1 ? "s" : ""}</span>
+                    {nights > 0 && quoteReady && (
+                      <span className="ml-2 text-brand-600 font-bold">· {Math.max(0, nights - 1)} noites · {nights} diárias</span>
                     )}
                     {nights > 0 && dynamicCalc && (
                       <span className="ml-2 font-bold text-brand-800">
@@ -737,7 +728,7 @@ export default function PropertyDetailPage() {
                       </span>
                     )}
                   </div>
-                  <button type="button"
+                  <button type="button" aria-label="Limpar datas selecionadas"
                     onClick={() => setForm(p => ({ ...p, checkIn: "", checkOut: "" }))}
                     className="w-7 h-7 flex items-center justify-center rounded-lg text-brand-400 hover:text-red-500 hover:bg-red-50 transition">
                     <X size={14} />
@@ -752,8 +743,15 @@ export default function PropertyDetailPage() {
                   <div className="flex items-center justify-center gap-2 py-6 text-slate-400 text-sm">
                     <Loader2 size={14} className="animate-spin" /> Carregando disponibilidade…
                   </div>
+                ) : availError || !availReady ? (
+                  <div role="alert" className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">
+                    <p>{availError || "Consultando disponibilidade..."}</p>
+                    <button type="button" onClick={() => setAvailabilityVersion(v => v + 1)} className="underline font-semibold mt-2">Tentar novamente</button>
+                  </div>
                 ) : (
                   <AvailabilityCalendar
+                      rangeStart={coverage.start}
+                      rangeEnd={coverage.end}
                     occupiedDates={occupiedDates}
                     minNightsRules={minNightsRules}
                     checkIn={form.checkIn}
@@ -771,7 +769,7 @@ export default function PropertyDetailPage() {
                       <p className="font-bold mb-0.5">Estadia mínima não atingida</p>
                       <p>
                         {minNightsRuleName ? <><strong>{minNightsRuleName}</strong> exige </> : "Este período exige "}
-                        mínimo de <strong>{minNightsRequired} noites</strong>.
+                        mínimo de <strong>{minNightsRequired} diárias</strong>.
                         Você selecionou {nights}.
                       </p>
                     </div>
@@ -841,7 +839,7 @@ export default function PropertyDetailPage() {
               </div>
 
               {/* ── Resumo de preço ── */}
-              {nights > 0 && (
+              {nights > 0 && quoteReady && (
                 <div className="bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden text-sm">
                   <div className="flex items-center justify-between px-4 py-3">
                     <div>
@@ -892,7 +890,7 @@ export default function PropertyDetailPage() {
                       )}
                       <div className="flex justify-between text-slate-600 text-xs">
                         <span>Taxa de limpeza</span>
-                        <span className="font-medium">{formatCurrency(property.cleaningFee)}</span>
+                        <span className="font-medium">{formatCurrency(quote?.cleaningFee ?? property.cleaningFee)}</span>
                       </div>
                       <div className="flex justify-between font-bold text-slate-900 pt-1.5 border-t border-slate-200 text-sm">
                         <span>Total</span>
@@ -910,8 +908,14 @@ export default function PropertyDetailPage() {
                   className="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-400 resize-none" />
               </div>
 
+              {nights > 0 && !quoteReady && (
+                <div role="status" className="text-sm text-amber-800">
+                  {quoteError || "Calculando o valor da hospedagem..."}
+                  {quoteError && <button type="button" className="ml-2 underline" onClick={() => setQuoteVersion(v => v + 1)}>Tentar novamente</button>}
+                </div>
+              )}
               <button type="submit"
-                disabled={submitting || nights <= 0 || minNightsViolated}
+                disabled={submitting || nights <= 0 || minNightsViolated || !availReady || !quoteReady || form.checkIn < coverage.start || form.checkOut > coverage.end}
                 className="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white font-bold py-3.5 rounded-xl transition-colors flex items-center justify-center gap-2">
                 {submitting
                   ? <><Loader2 size={16} className="animate-spin" /> Criando reserva...</>
@@ -920,7 +924,7 @@ export default function PropertyDetailPage() {
               </button>
 
               <p className="text-[10px] text-slate-400 text-center">
-                Você receberá um código para finalizar o pagamento e confirmar a reserva
+                Você receberá um link seguro para finalizar o pagamento e acompanhar a reserva
               </p>
             </form>
           </div>

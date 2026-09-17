@@ -14,6 +14,17 @@ export async function GET(req: NextRequest) {
     // Get month from query params or use previous month
     const { searchParams } = new URL(req.url);
     let monthParam = searchParams.get("month");
+    if (monthParam && !/^\d{4}-(0[1-9]|1[0-2])$/.test(monthParam)) {
+      return NextResponse.json({ error: "Mês inválido. Use AAAA-MM." }, { status: 400 });
+    }
+    const settings = await prisma.setting.findMany({
+      where: { key: { in: ["smtp_host", "smtp_port", "smtp_user", "smtp_pass", "smtp_from"] } },
+    });
+    const smtp = Object.fromEntries(settings.map(setting => [setting.key, setting.value]));
+    const port = Number(smtp.smtp_port || "465");
+    if (!smtp.smtp_host || !smtp.smtp_user || !smtp.smtp_pass || !Number.isInteger(port) || port < 1 || port > 65535) {
+      return NextResponse.json({ error: "Configuração SMTP incompleta ou inválida", ownersSent: 0 }, { status: 503 });
+    }
 
     let targetDate: Date;
     if (monthParam) {
@@ -75,9 +86,9 @@ export async function GET(req: NextRequest) {
           name: string;
           reservas: number;
           receitaBruta: number;
-          comissao: number;
+          repasses: number;
           despesas: number;
-          valorAReceber: number;
+          saldoPeriodo: number;
         }> = [];
 
         for (const property of properties) {
@@ -134,17 +145,17 @@ export async function GET(req: NextRequest) {
           });
 
           const receitaBruta = incomeTransactions._sum.amount || 0;
-          const comissao = commissionTransactions._sum.amount || 0;
+          const repasses = commissionTransactions._sum.amount || 0;
           const despesas = expenseTransactions._sum.amount || 0;
-          const valorAReceber = receitaBruta - comissao - despesas;
+          const saldoPeriodo = receitaBruta - repasses - despesas;
 
           propertyData.push({
             name: property.name,
             reservas: reservasCount,
             receitaBruta,
-            comissao,
+            repasses,
             despesas,
-            valorAReceber,
+            saldoPeriodo,
           });
         }
 
@@ -152,18 +163,18 @@ export async function GET(req: NextRequest) {
         const htmlContent = buildOwnerReportEmail(owner.name, monthName, propertyData);
 
         // Send email
-        const sent = await sendMail({
+        await sendMail({
+          host: smtp.smtp_host,
+          port,
+          user: smtp.smtp_user,
+          pass: smtp.smtp_pass,
+          from: smtp.smtp_from || `Reservas Ita <${smtp.smtp_user}>`,
           to: owner.email,
-          toName: owner.name,
           subject: `Relatório Mensal - ${monthName}`,
           html: htmlContent,
         });
 
-        if (sent) {
-          ownersSent++;
-        } else {
-          errors.push(`Falha ao enviar para ${owner.email}`);
-        }
+        ownersSent++;
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
         errors.push(`Erro processando ${owner.email}: ${errorMsg}`);
@@ -171,10 +182,10 @@ export async function GET(req: NextRequest) {
     }
 
     return NextResponse.json({
-      ok: true,
+      ok: errors.length === 0,
       ownersSent,
       errors,
-    });
+    }, { status: errors.length ? 502 : 200 });
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
     console.error("Owner report cron error:", error);
@@ -192,9 +203,9 @@ function buildOwnerReportEmail(
     name: string;
     reservas: number;
     receitaBruta: number;
-    comissao: number;
+    repasses: number;
     despesas: number;
-    valorAReceber: number;
+    saldoPeriodo: number;
   }>
 ): string {
   const formatCurrency = (value: number) => {
@@ -205,10 +216,10 @@ function buildOwnerReportEmail(
   };
 
   const totalReceita = propertyData.reduce((sum, p) => sum + p.receitaBruta, 0);
-  const totalComissao = propertyData.reduce((sum, p) => sum + p.comissao, 0);
+  const totalRepasses = propertyData.reduce((sum, p) => sum + p.repasses, 0);
   const totalDespesas = propertyData.reduce((sum, p) => sum + p.despesas, 0);
-  const totalValorAReceber = propertyData.reduce(
-    (sum, p) => sum + p.valorAReceber,
+  const totalSaldoPeriodo = propertyData.reduce(
+    (sum, p) => sum + p.saldoPeriodo,
     0
   );
 
@@ -219,9 +230,9 @@ function buildOwnerReportEmail(
       <td style="padding: 12px; border-bottom: 1px solid #e5e7eb; text-align: left;">${p.name}</td>
       <td style="padding: 12px; border-bottom: 1px solid #e5e7eb; text-align: center;">${p.reservas}</td>
       <td style="padding: 12px; border-bottom: 1px solid #e5e7eb; text-align: right;">${formatCurrency(p.receitaBruta)}</td>
-      <td style="padding: 12px; border-bottom: 1px solid #e5e7eb; text-align: right; color: #dc2626;">-${formatCurrency(p.comissao)}</td>
+      <td style="padding: 12px; border-bottom: 1px solid #e5e7eb; text-align: right; color: #dc2626;">-${formatCurrency(p.repasses)}</td>
       <td style="padding: 12px; border-bottom: 1px solid #e5e7eb; text-align: right; color: #dc2626;">-${formatCurrency(p.despesas)}</td>
-      <td style="padding: 12px; border-bottom: 1px solid #e5e7eb; text-align: right; font-weight: bold; color: #16a34a;">${formatCurrency(p.valorAReceber)}</td>
+      <td style="padding: 12px; border-bottom: 1px solid #e5e7eb; text-align: right; font-weight: bold; color: #16a34a;">${formatCurrency(p.saldoPeriodo)}</td>
     </tr>
   `
     )
@@ -334,7 +345,7 @@ function buildOwnerReportEmail(
 
       <div class="content">
         <p class="greeting">Olá <strong>${ownerName}</strong>,</p>
-        <p class="greeting">Segue em anexo seu relatório financeiro detalhado dos imóveis referente ao mês de ${month}.</p>
+        <p class="greeting">Segue seu relatório financeiro detalhado dos imóveis referente ao mês de ${month}.</p>
 
         <div class="section-title">Resumo por Imóvel</div>
 
@@ -344,9 +355,9 @@ function buildOwnerReportEmail(
               <th>Imóvel</th>
               <th>Reservas</th>
               <th>Receita Bruta</th>
-              <th>Comissão</th>
+              <th>Repasses registrados</th>
               <th>Despesas</th>
-              <th>Valor a Receber</th>
+              <th>Saldo do Período</th>
             </tr>
           </thead>
           <tbody>
@@ -362,16 +373,16 @@ function buildOwnerReportEmail(
             <span class="summary-value">${formatCurrency(totalReceita)}</span>
           </div>
           <div class="summary-row">
-            <span class="summary-label">Comissão Total:</span>
-            <span class="summary-value" style="color: #dc2626;">-${formatCurrency(totalComissao)}</span>
+            <span class="summary-label">Repasses registrados Total:</span>
+            <span class="summary-value" style="color: #dc2626;">-${formatCurrency(totalRepasses)}</span>
           </div>
           <div class="summary-row">
             <span class="summary-label">Despesas Totais:</span>
             <span class="summary-value" style="color: #dc2626;">-${formatCurrency(totalDespesas)}</span>
           </div>
           <div class="summary-row" style="border: none; margin-top: 10px; padding-top: 10px; padding-bottom: 0; border-top: 2px solid #d1d5db;">
-            <span class="summary-label" style="font-size: 16px;">Valor Total a Receber:</span>
-            <span class="summary-value" style="font-size: 16px; color: #16a34a;">${formatCurrency(totalValorAReceber)}</span>
+            <span class="summary-label" style="font-size: 16px;">Saldo Total do Período:</span>
+            <span class="summary-value" style="font-size: 16px; color: #16a34a;">${formatCurrency(totalSaldoPeriodo)}</span>
           </div>
         </div>
 

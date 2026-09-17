@@ -215,16 +215,16 @@ export default function PricingPage() {
   }
 
   // Update package minNights
-  async function updateMinNights(ruleId: string, nights: number) {
+  async function updateMinNights(ruleId: string, diarias: number) {
     try {
       const rule = rules.find((r) => r.id === ruleId);
       if (!rule) return;
       await apiRequest(`/api/pricing-rules/${ruleId}`, {
         method: "PUT",
-        body: JSON.stringify({ ...rule, minNights: nights }),
+        body: JSON.stringify({ ...rule, minNights: diarias }),
       });
       setRules((prev) =>
-        prev.map((r) => (r.id === ruleId ? { ...r, minNights: nights } : r))
+        prev.map((r) => (r.id === ruleId ? { ...r, minNights: diarias } : r))
       );
       setEditingMinNightsId(null);
       toast.success("Estadia mínima atualizada!");
@@ -741,14 +741,14 @@ export default function PricingPage() {
                     const endDate = rule.endDate
                       ? new Date(rule.endDate)
                       : null;
-                    const nights = startDate && endDate
+                    const diarias = startDate && endDate
                       ? Math.ceil(
                           (endDate.getTime() - startDate.getTime()) /
                             (1000 * 60 * 60 * 24)
-                        )
+                        ) + 1
                       : 0;
                     const pricePerNight =
-                      rule.value > 0 ? (rule.value / nights).toFixed(2) : "—";
+                      rule.value > 0 ? (rule.value / diarias).toFixed(2) : "—";
                     const isEditing = editingPackageId === rule.id;
 
                     return (
@@ -785,7 +785,7 @@ export default function PricingPage() {
 
                         <div className="bg-slate-50 rounded-lg p-3 mb-4">
                           <p className="text-xs text-slate-500 mb-2">
-                            {nights} noites
+                            {diarias} diárias
                           </p>
                           {isEditing ? (
                             <div className="flex gap-2">
@@ -834,7 +834,7 @@ export default function PricingPage() {
 
                         {rule.value > 0 && (
                           <p className="text-xs text-slate-500 text-center mb-3">
-                            R$ {pricePerNight}/noite equivalente
+                            R$ {pricePerNight}/diária equivalente
                           </p>
                         )}
 
@@ -864,10 +864,10 @@ export default function PricingPage() {
                               </div>
                             ) : (
                               <button
-                                onClick={() => { setEditingMinNightsId(rule.id); setEditingMinNights(String(rule.minNights ?? nights)); }}
+                                onClick={() => { setEditingMinNightsId(rule.id); setEditingMinNights(String(rule.minNights ?? diarias)); }}
                                 className="text-sm font-bold text-amber-800 hover:underline"
                               >
-                                {rule.minNights ?? nights} noite{(rule.minNights ?? nights) > 1 ? "s" : ""}
+                                {rule.minNights ?? diarias} diária{(rule.minNights ?? diarias) > 1 ? "s" : ""}
                               </button>
                             )}
                           </div>

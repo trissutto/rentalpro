@@ -7,7 +7,8 @@ import {
   ChevronDown, ChevronUp, ExternalLink, RefreshCw,
   FileCheck, AlertCircle, TrendingUp, User, Home,
 } from "lucide-react";
-import { apiRequest } from "@/hooks/useAuth";
+import { apiRequest, useAuthStore } from "@/hooks/useAuth";
+import toast from "react-hot-toast";
 import { cn, formatCurrency, formatDate } from "@/lib/utils";
 import Link from "next/link";
 
@@ -43,7 +44,7 @@ interface PlanStats {
   paidAmount: number;
   pendingAmount: number;
   overdueAmount: number;
-  health: "ok" | "due_soon" | "overdue";
+  health: "ok" | "due_soon" | "overdue" | "review";
 }
 
 interface PlanEntry {
@@ -57,6 +58,7 @@ interface PlanEntry {
   nights: number;
   totalAmount: number;
   reservationStatus: string;
+  paymentStatus: string;
   propertyName: string;
   propertyId: string;
   plan: InstallmentPlan;
@@ -70,6 +72,7 @@ interface Summary {
   totalPaidAmount: number;
   totalPendingAmount: number;
   totalOverdueAmount: number;
+  totalReview: number;
 }
 
 function fmtDate(iso: string) {
@@ -79,6 +82,7 @@ function fmtDate(iso: string) {
 }
 
 const HEALTH_CONFIG = {
+  review: { label: "Em conferência", color: "bg-amber-100 text-amber-900 border-amber-300", dot: "bg-amber-600", border: "border-l-amber-600" },
   overdue: { label: "Inadimplente", color: "bg-red-100 text-red-700 border-red-200", dot: "bg-red-500", border: "border-l-red-500" },
   due_soon: { label: "Vence em breve", color: "bg-amber-100 text-amber-700 border-amber-200", dot: "bg-amber-500", border: "border-l-amber-500" },
   ok: { label: "Em dia", color: "bg-green-100 text-green-700 border-green-200", dot: "bg-green-500", border: "border-l-green-500" },
@@ -99,9 +103,11 @@ function ProgressBar({ paid, total }: { paid: number; total: number }) {
   );
 }
 
-function PlanCard({ entry, onManualPay }: { entry: PlanEntry; onManualPay: (code: string, seq: number) => void }) {
+function PlanCard({ entry, onManualPay, canMarkPaid }: { entry: PlanEntry; onManualPay: (code: string, seq: number, resolveReview?: boolean) => void; canMarkPaid: boolean }) {
   const [expanded, setExpanded] = useState(false);
+  const [receiptChecked, setReceiptChecked] = useState(false);
   const cfg = HEALTH_CONFIG[entry.stats.health];
+  const needsReview = entry.stats.health === "review";
 
   return (
     <motion.div
@@ -140,7 +146,7 @@ function PlanCard({ entry, onManualPay }: { entry: PlanEntry; onManualPay: (code
 
           <div className="text-right shrink-0">
             <p className="text-sm font-bold text-slate-900">{formatCurrency(entry.totalAmount)}</p>
-            <p className="text-xs text-green-600 font-medium">{formatCurrency(entry.stats.paidAmount)} pago</p>
+            <p className={cn("text-xs font-medium", needsReview ? "text-amber-700" : "text-green-600")}>{formatCurrency(entry.stats.paidAmount)} {needsReview ? "registrado — conferir" : "pago"}</p>
             {entry.stats.pendingAmount > 0 && (
               <p className="text-xs text-slate-400">{formatCurrency(entry.stats.pendingAmount)} restante</p>
             )}
@@ -152,13 +158,14 @@ function PlanCard({ entry, onManualPay }: { entry: PlanEntry; onManualPay: (code
         </div>
 
         {/* Alertas */}
-        {entry.stats.overdue > 0 && (
+        {needsReview && <p role="alert" className="mt-2 text-xs text-amber-800">Confira o pagamento com a administração antes de registrar outra cobrança.</p>}
+        {!needsReview && entry.stats.overdue > 0 && (
           <div className="mt-2 flex items-center gap-1.5 text-xs text-red-600 bg-red-50 rounded-lg px-3 py-1.5">
             <AlertCircle size={12} />
             <span>{entry.stats.overdue} parcela{entry.stats.overdue > 1 ? "s" : ""} vencida{entry.stats.overdue > 1 ? "s" : ""} — {formatCurrency(entry.stats.overdueAmount)}</span>
           </div>
         )}
-        {entry.stats.dueSoon > 0 && entry.stats.overdue === 0 && (
+        {!needsReview && entry.stats.dueSoon > 0 && entry.stats.overdue === 0 && (
           <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-1.5">
             <Clock size={12} />
             <span>{entry.stats.dueSoon} parcela{entry.stats.dueSoon > 1 ? "s" : ""} vence em até 5 dias</span>
@@ -171,7 +178,7 @@ function PlanCard({ entry, onManualPay }: { entry: PlanEntry; onManualPay: (code
             onClick={e => e.stopPropagation()}
             className="flex items-center gap-1 text-xs text-brand-600 hover:underline"
           >
-            <ExternalLink size={11} /> Ver reserva
+            <ExternalLink size={11} /> {needsReview ? "Conferir recebimento na reserva" : "Ver reserva"}
           </Link>
           <button className="text-slate-400 hover:text-slate-600">
             {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
@@ -182,6 +189,10 @@ function PlanCard({ entry, onManualPay }: { entry: PlanEntry; onManualPay: (code
       {/* Detalhe parcelas */}
       {expanded && (
         <div className="border-t border-slate-100">
+          {needsReview && canMarkPaid && <label className="flex items-start gap-2 p-4 text-sm text-amber-900 bg-amber-50">
+            <input type="checkbox" checked={receiptChecked} onChange={event => setReceiptChecked(event.target.checked)} className="mt-1" />
+            Conferi o recebimento e os comprovantes. Desejo resolver a revisão ao confirmar a parcela selecionada.
+          </label>}
           <div className="px-3 py-2 bg-slate-50 border-b border-slate-100">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Cronograma de Parcelas</p>
           </div>
@@ -212,7 +223,7 @@ function PlanCard({ entry, onManualPay }: { entry: PlanEntry; onManualPay: (code
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-slate-700">{item.label}</p>
                     <div className="flex items-center gap-2 text-xs text-slate-400">
-                      {item.paid
+                      {needsReview ? <span className="text-amber-700">Pagamento em conferência</span> : item.paid
                         ? <span className="text-green-600">Pago em {fmtDate(item.paidAt || "")}</span>
                         : isOverdue
                           ? <span className="text-red-600 font-medium">Venceu em {fmtDate(item.dueDate)}</span>
@@ -243,10 +254,11 @@ function PlanCard({ entry, onManualPay }: { entry: PlanEntry; onManualPay: (code
                     )}>
                       {formatCurrency(item.amount)}
                     </p>
-                    {!item.paid && (
+                    {!item.paid && canMarkPaid && (
                       <button
-                        onClick={() => onManualPay(entry.code, item.seq)}
-                        className="text-[10px] text-brand-600 hover:underline mt-0.5 block text-right"
+                        onClick={() => onManualPay(entry.code, item.seq, needsReview && receiptChecked)}
+                        disabled={needsReview && !receiptChecked}
+                        className="text-[10px] text-brand-600 hover:underline mt-0.5 block text-right disabled:opacity-50"
                       >
                         Marcar pago
                       </button>
@@ -263,10 +275,12 @@ function PlanCard({ entry, onManualPay }: { entry: PlanEntry; onManualPay: (code
 }
 
 export default function PaymentsPage() {
+  const { user } = useAuthStore();
+  const canManage = user?.role === "ADMIN" || user?.role === "TEAM";
   const [plans, setPlans] = useState<PlanEntry[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<"all" | "overdue" | "due_soon" | "ok">("all");
+  const [filter, setFilter] = useState<"all" | "overdue" | "due_soon" | "ok" | "review">("all");
   const [markingPaid, setMarkingPaid] = useState(false);
 
   useEffect(() => { loadData(); }, []);
@@ -276,28 +290,33 @@ export default function PaymentsPage() {
     try {
       const res = await apiRequest("/api/admin/installments");
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Não foi possível carregar os parcelamentos.");
       setPlans(data.plans ?? []);
       setSummary(data.summary ?? null);
     } catch (err) {
-      console.error(err);
+      toast.error(err instanceof Error ? err.message : "Não foi possível carregar os parcelamentos.");
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleManualPay(code: string, seq: number) {
+  async function handleManualPay(code: string, seq: number, resolveReview = false) {
+    if (!canManage || markingPaid) return;
+    const entry = plans.find(item => item.code === code);
+    if (entry?.stats.health === "review" && !resolveReview) return;
     if (!confirm(`Confirmar pagamento manual da parcela ${seq} da reserva ${code}?`)) return;
     setMarkingPaid(true);
     try {
-      const res = await apiRequest("/api/public/payments/pay-installment", {
+      const res = await apiRequest("/api/admin/installments/mark-paid", {
         method: "POST",
-        body: JSON.stringify({ code, seq, manual: true }),
+        body: JSON.stringify({ code, seq, method: "Manual", ...(entry?.stats.health === "review" && resolveReview ? { resolveReview: true } : {}) }),
       });
-      if (res.ok !== false) {
-        await loadData();
-      }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Não foi possível confirmar a parcela.");
+      toast.success("Pagamento da parcela registrado.");
+      await loadData();
     } catch (err) {
-      console.error(err);
+      toast.error(err instanceof Error ? err.message : "Não foi possível confirmar a parcela.");
     } finally {
       setMarkingPaid(false);
     }
@@ -382,10 +401,11 @@ export default function PaymentsPage() {
 
       {/* Filtros */}
       <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
-        {(["all", "overdue", "due_soon", "ok"] as const).map(f => {
-          const labels = { all: "Todos", overdue: "Inadimplentes", due_soon: "Vence em breve", ok: "Em dia" };
+        {(["all", "review", "overdue", "due_soon", "ok"] as const).map(f => {
+          const labels = { all: "Todos", review: "Em conferência", overdue: "Inadimplentes", due_soon: "Vence em breve", ok: "Em dia" };
           const counts = {
             all: plans.length,
+            review: plans.filter(p => p.stats.health === "review").length,
             overdue: plans.filter(p => p.stats.health === "overdue").length,
             due_soon: plans.filter(p => p.stats.health === "due_soon").length,
             ok: plans.filter(p => p.stats.health === "ok").length,
@@ -433,6 +453,7 @@ export default function PaymentsPage() {
               key={entry.reservationId}
               entry={entry}
               onManualPay={handleManualPay}
+              canMarkPaid={canManage && !markingPaid && !["CANCELLED", "CANCELED", "CHECKED_OUT"].includes(entry.reservationStatus)}
             />
           ))}
         </div>

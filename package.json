@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "next lint",
     "test": "node --test tests/*.test.cjs",
+    "typecheck": "tsc --noEmit --incremental false",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:seed": "ts-node --project tsconfig.json prisma/seed.ts",

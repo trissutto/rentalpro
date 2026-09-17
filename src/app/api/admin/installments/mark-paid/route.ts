@@ -1,111 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { getAuthUser } from "@/lib/auth";
+import { confirmManualPayment, PaymentError } from "@/lib/payment-integrity";
+import { ReservationAvailabilityError } from "@/lib/reservation-availability";
 
-/**
- * POST /api/admin/installments/mark-paid
- * Body: { code: string, seq: number, method?: string, notes?: string }
- *
- * Admin manually marks an installment as paid (no MP processing needed).
- * - Updates installmentData[seq].paid = true
- * - Creates a FinancialTransaction
- * - If all installments paid → sets reservation paymentStatus = PAID
- */
 export async function POST(req: NextRequest) {
   const user = await getAuthUser(req);
-  if (!user || user.role === "OWNER") {
-    return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
-  }
-
+  if (!user || !["ADMIN", "TEAM"].includes(user.role)) return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
   try {
-    const { code, seq, method = "Manual", notes } = await req.json();
-
-    if (!code || !seq) {
-      return NextResponse.json({ error: "code e seq são obrigatórios" }, { status: 400 });
-    }
-
-    // Load reservation
-    const rows: any[] = await (prisma as any).$queryRawUnsafe(
-      `SELECT r.id, r.code, r.guestName, r.propertyId, r.totalAmount, r.paymentStatus, r.installmentData,
-              p.name as propertyName
-       FROM reservations r
-       JOIN properties p ON r.propertyId = p.id
-       WHERE r.code = ?`,
-      String(code).toUpperCase()
-    );
-
-    if (!rows.length) {
-      return NextResponse.json({ error: "Reserva não encontrada" }, { status: 404 });
-    }
-    const r = rows[0];
-
-    if (!r.installmentData) {
-      return NextResponse.json({ error: "Nenhum plano de parcelamento encontrado" }, { status: 400 });
-    }
-
-    let plan: any;
-    try { plan = JSON.parse(r.installmentData); } catch {
-      return NextResponse.json({ error: "Plano inválido" }, { status: 400 });
-    }
-
-    const item = plan.items?.find((i: any) => i.seq === Number(seq));
-    if (!item) {
-      return NextResponse.json({ error: `Parcela ${seq} não encontrada` }, { status: 404 });
-    }
-    if (item.paid) {
-      return NextResponse.json({ error: "Esta parcela já está paga" }, { status: 409 });
-    }
-
-    // Mark installment as paid
-    const now = new Date().toISOString();
-    item.paid = true;
-    item.paidAt = now;
-    item.paymentMethod = method;
-    if (notes) item.notes = notes;
-
-    // Check if ALL paid
-    const allPaid = plan.items.every((i: any) => i.paid);
-
-    // Update reservation
-    await (prisma as any).$executeRawUnsafe(
-      `UPDATE reservations
-       SET installmentData = ?,
-           paymentStatus = ?,
-           paymentMethod = ?,
-           paidAt = ?
-       WHERE id = ?`,
-      JSON.stringify(plan),
-      allPaid ? "PAID" : "PARTIAL",
-      `Parcelado (${plan.numInstallments}x)`,
-      allPaid ? now : null,
-      r.id
-    );
-
-    if (allPaid) {
-      await prisma.reservation.update({
-        where: { id: r.id },
-        data: { status: "CONFIRMED" },
-      });
-    }
-
-    // Create financial transaction
-    await prisma.financialTransaction.create({
-      data: {
-        reservationId: r.id,
-        propertyId: r.propertyId,
-        type: "INCOME",
-        category: "INSTALLMENT",
-        description: `${item.label} — ${r.code} (${r.guestName}) — ${method}${notes ? ` — ${notes}` : ""}`,
-        amount: Number(item.amount),
-        isPaid: true,
-        paidAt: new Date(),
-        createdById: user.id,
-      },
-    });
-
-    return NextResponse.json({ ok: true, allPaid, item });
-  } catch (err) {
-    console.error("mark-paid error:", err);
-    return NextResponse.json({ error: "Erro interno" }, { status: 500 });
+    const { code, seq, method = "Manual", notes, amount, resolveReview } = await req.json();
+    if (typeof code !== "string" || !Number.isInteger(seq) || seq < 1 || typeof method !== "string") return NextResponse.json({ error: "Dados inválidos" }, { status: 400 });
+    const reservation = await confirmManualPayment({ code: code.toUpperCase(), seq, method, notes, amount, resolveReview, userId: user.id });
+    const item = reservation.installmentData ? JSON.parse(reservation.installmentData).items.find((part: { seq: number }) => part.seq === seq) : null;
+    return NextResponse.json({ ok: true, allPaid: reservation.paymentStatus === "PAID", item });
+  } catch (error) {
+    if (error instanceof PaymentError || error instanceof ReservationAvailabilityError) return NextResponse.json({ error: error.message }, { status: error.status });
+    return NextResponse.json({ error: "Não foi possível confirmar a parcela." }, { status: 503 });
   }
 }

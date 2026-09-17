@@ -1,3 +1,6 @@
+import { attemptKey, lockPayments, PaymentError } from "@/lib/payment-integrity";
+import { assertReservationAvailability, isReservationHoldExpired } from "@/lib/reservation-availability";
+import { authorizeGuestRequest } from "@/lib/guest-access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
@@ -33,22 +36,22 @@ export async function POST(req: NextRequest) {
   try {
     const { code, numInstallments } = await req.json();
 
-    if (!code || !numInstallments || numInstallments < 1) {
+    if (!code || !Number.isInteger(numInstallments) || numInstallments < 1 || numInstallments > 12) {
       return NextResponse.json({ error: "code e numInstallments são obrigatórios" }, { status: 400 });
     }
 
+    const denied = await authorizeGuestRequest(req, String(code), "payments:write");
+    if (denied) return denied;
     // Load reservation
-    const rows: any[] = await (prisma as any).$queryRawUnsafe(
-      `SELECT id, checkIn, totalAmount, paymentStatus, installmentData FROM reservations WHERE code = ?`,
-      String(code).toUpperCase()
-    );
-    if (!rows.length) return NextResponse.json({ error: "Reserva não encontrada" }, { status: 404 });
-
-    const r = rows[0];
-    if (r.paymentStatus === "PAID") {
-      return NextResponse.json({ error: "Reserva já está paga" }, { status: 409 });
-    }
-
+    return await prisma.$transaction(async tx => {
+    await lockPayments(tx);
+    const r = await tx.reservation.findUnique({ where: { code: String(code).toUpperCase() } });
+    if (!r) return NextResponse.json({ error: "Reserva não encontrada" }, { status: 404 });
+    if (!["PENDING", "CONFIRMED"].includes(r.status) || ["PAID", "PARTIAL", "REVIEW"].includes(r.paymentStatus) || isReservationHoldExpired(r)) throw new PaymentError("Reserva indisponível para parcelamento.");
+    await assertReservationAvailability(tx, { propertyId: r.propertyId, checkIn: r.checkIn, checkOut: r.checkOut, excludeReservationId: r.id });
+    const attempts = await tx.setting.findMany({ where: { key: { startsWith: "payment-attempt:" + r.id + ":" } } });
+    if (attempts.length) throw new PaymentError("Não é possível substituir o plano após iniciar um pagamento.");
+    if (r.installmentData && JSON.parse(r.installmentData).items?.some((i: InstallmentItem) => i.paid || i.mpPaymentId)) throw new PaymentError("O plano possui pagamentos e não pode ser substituído.");
     const total = Number(r.totalAmount);
     const checkIn = new Date(r.checkIn);
     const today = new Date();
@@ -121,15 +124,11 @@ export async function POST(req: NextRequest) {
       createdAt: new Date().toISOString(),
     };
 
-    // Save plan to reservation
-    await (prisma as any).$executeRawUnsafe(
-      `UPDATE reservations SET installmentData = ? WHERE id = ?`,
-      JSON.stringify(plan),
-      r.id
-    );
-
+    await tx.reservation.update({ where: { id: r.id }, data: { installmentData: JSON.stringify(plan) } });
     return NextResponse.json({ ok: true, plan });
+    });
   } catch (e) {
+    if (e instanceof PaymentError) return NextResponse.json({ error: e.message }, { status: e.status });
     console.error("installment-plan error:", e);
     return NextResponse.json({ error: "Erro interno" }, { status: 500 });
   }
@@ -143,6 +142,8 @@ export async function GET(req: NextRequest) {
   const code = new URL(req.url).searchParams.get("code");
   if (!code) return NextResponse.json({ error: "code obrigatório" }, { status: 400 });
 
+  const denied = await authorizeGuestRequest(req, code, "payments:write");
+  if (denied) return denied;
   const rows: any[] = await (prisma as any).$queryRawUnsafe(
     `SELECT installmentData FROM reservations WHERE code = ?`,
     code.toUpperCase()

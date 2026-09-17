@@ -29,7 +29,7 @@ interface NavGroup {
 }
 
 const topItems: NavItem[] = [
-  { href: "/", icon: LayoutDashboard, label: "Painel" },
+  { href: "/home", icon: LayoutDashboard, label: "Painel" },
   { href: "/calendar", icon: Calendar, label: "Calendário" },
   { href: "/reservations", icon: ClipboardList, label: "Reservas" },
   { href: "/properties", icon: Home, label: "Imóveis" },

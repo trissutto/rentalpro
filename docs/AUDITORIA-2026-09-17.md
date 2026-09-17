@@ -3,7 +3,7 @@
 Data: 17/09/2026
 Repositório analisado: `C:/Users/User/Documents/Claude/Projects/RESERVAS ITA/rental-system`
 Commit de referência: `285089d` — 21/08/2026.
-Estado dos achados: abertos; esta etapa documenta a auditoria e as regras de trabalho.
+Estado original: abertos na auditoria inicial. As correções, testes e publicação estão no [registro de correções](CORRECOES-2026-09-17.md). O diagnóstico abaixo foi preservado como histórico.
 
 ## Resultado e limites
 

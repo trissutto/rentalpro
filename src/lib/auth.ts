@@ -11,13 +11,16 @@ import { prisma } from "./prisma";
  * token de administrador e entrar no sistema. Preferimos que a aplicação nem
  * suba sem a chave a subir com uma que está escrita no fonte.
  */
-const JWT_SECRET = process.env.JWT_SECRET;
-
-if (!JWT_SECRET) {
+function requiredSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
   throw new Error(
     "JWT_SECRET não configurada — defina a variável de ambiente antes de subir a aplicação."
   );
+  }
+  return secret;
 }
+const JWT_SECRET = requiredSecret();
 
 const JWT_EXPIRES = "7d";
 
@@ -33,7 +36,11 @@ export function signToken(payload: JWTPayload): string {
 }
 
 export function verifyToken(token: string): JWTPayload {
-  return jwt.verify(token, JWT_SECRET) as JWTPayload;
+  const payload = jwt.verify(token, JWT_SECRET, { algorithms: ["HS256"] });
+  if (typeof payload === "string" || !payload.userId || !payload.email || !payload.role || !payload.name) {
+    throw new Error("Sessão inválida");
+  }
+  return payload as JWTPayload;
 }
 
 export async function hashPassword(password: string): Promise<string> {

@@ -73,7 +73,7 @@ Olá, ${guestName}! Sua reserva foi confirmada.
 📍 *Imóvel:* ${propertyName}
 📅 *Check-in:* ${formatDate(checkIn)}
 📅 *Check-out:* ${formatDate(checkOut)}
-🌙 *Noites:* ${nights}
+🌙 *Diárias cobradas:* ${nights}
 💰 *Total:* ${formatCurrency(totalAmount)}
 
 Em breve você receberá as instruções de acesso.

@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Preencha: nome, endereço, cidade, estado e proprietário" }, { status: 400 });
     }
     if (!basePrice) {
-      return NextResponse.json({ error: "Informe o preço por noite" }, { status: 400 });
+      return NextResponse.json({ error: "Informe o preço por diária" }, { status: 400 });
     }
 
     // Verifica se proprietário existe

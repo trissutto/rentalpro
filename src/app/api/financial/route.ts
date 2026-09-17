@@ -6,6 +6,7 @@ import { startOfMonth, endOfMonth, startOfYear, endOfYear } from "date-fns";
 export async function GET(req: NextRequest) {
   const user = await getAuthUser(req);
   if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+  if (!["ADMIN", "TEAM", "OWNER"].includes(user.role)) return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
 
   const { searchParams } = new URL(req.url);
   const period = searchParams.get("period") || "month";
@@ -29,11 +30,24 @@ export async function GET(req: NextRequest) {
     endDate = to ? new Date(to) : endOfMonth(now);
   }
 
-  const where: Record<string, unknown> = {
+  if (!Number.isFinite(startDate.getTime()) || !Number.isFinite(endDate.getTime()) || startDate > endDate) {
+    return NextResponse.json({ error: "Período inválido" }, { status: 400 });
+  }
+  if (propertyId && user.role === "OWNER" && !await prisma.property.findFirst({ where: { id: propertyId, ownerId: user.id }, select: { id: true } })) {
+    return NextResponse.json({ error: "Imóvel não encontrado" }, { status: 404 });
+  }
+  const scope = user.role === "OWNER" ? {
+    OR: [
+      { property: { ownerId: user.id } },
+      { propertyId: null, reservation: { property: { ownerId: user.id } } },
+    ],
+  } : {};
+  const where = {
+    ...scope,
     createdAt: { gte: startDate, lte: endDate },
+    ...(propertyId ? { propertyId } : {}),
+    ...(type ? { type } : {}),
   };
-  if (propertyId) where.propertyId = propertyId;
-  if (type) where.type = type;
 
   const [transactions, summary] = await Promise.all([
     prisma.financialTransaction.findMany({
@@ -65,6 +79,7 @@ export async function GET(req: NextRequest) {
   // Monthly breakdown for charts (SQLite compatible — computed in JS)
   const yearTransactions = await prisma.financialTransaction.findMany({
     where: {
+      ...where,
       createdAt: { gte: startOfYear(now), lte: endOfYear(now) },
     },
     select: { type: true, amount: true, createdAt: true },
@@ -83,7 +98,7 @@ export async function GET(req: NextRequest) {
     transactions,
     summary: { income, expenses, netProfit },
     monthlyData,
-  });
+  }, { headers: { "Cache-Control": "private, no-store" } });
 }
 
 function parseMoney(value: string | number): number {
@@ -93,7 +108,7 @@ function parseMoney(value: string | number): number {
 
 export async function POST(req: NextRequest) {
   const user = await getAuthUser(req);
-  if (!user || user.role === "OWNER") {
+  if (!user || !["ADMIN", "TEAM"].includes(user.role)) {
     return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
   }
 

@@ -1,281 +1,74 @@
-# 🌴 Reservas Ita — Sistema de Gestão de Casas por Temporada
+# Reservas Ita
 
-Sistema completo de administração interna para locação por temporada. Mobile-first, PWA instalável, com automações, financeiro e integração WhatsApp.
+Aplicação de reservas de temporada em Itanhaém, com catálogo público, portal do hóspede e administração de imóveis, reservas, limpeza e financeiro.
 
----
+## Stack e ambiente
 
-## 📸 Módulos
+- Next.js 14, React 18 e TypeScript.
+- Prisma 5 com **SQLite em arquivo**; o schema atual não usa PostgreSQL.
+- Produção principal: Railway, serviço rentalpro, domínio https://reservasita.com.br.
+- Docker com Node.js 20; volume persistente em /app/prisma.
+- GitHub Actions publica imagem no GHCR e mantém integração Portainer. Railway acompanha main.
+- Contratos PDF utilizam Python e ReportLab no contêiner.
 
-| Módulo | Descrição |
-|--------|-----------|
-| 🗓️ Dashboard | Ocupação, check-ins/outs do dia, limpezas pendentes, financeiro |
-| 📅 Calendário | Grade visual por imóvel, todas as reservas, drag (coming soon) |
-| 🧹 Limpeza | Kanban automático (Pendente → Em andamento → Concluído → Atrasado) |
-| 🏠 Imóveis | Cadastro completo com fotos, preços, amenidades |
-| 💰 Financeiro | Receitas, despesas, repasses, gráficos mensais |
-| 👷 Faxineiras | Cadastro e distribuição automática de tarefas |
-| 📲 WhatsApp | Notificações automáticas para hóspedes e faxineiras |
+## Desenvolvimento e validação
 
----
+Use Node.js 24 para os testes (alguns usam node:sqlite). Copie .env.example para .env e configure um banco local separado e chave JWT aleatória. Não reutilize segredos de produção.
 
-## 🚀 Instalação Rápida
-
-### Pré-requisitos
-- Node.js 18+
-- PostgreSQL 14+
-- npm ou yarn
-
-### 1. Instalar dependências
-
-```bash
-npm install
-```
-
-### 2. Configurar variáveis de ambiente
-
-```bash
-cp .env.example .env
-# Edite o .env com suas credenciais
-```
-
-Edite o arquivo `.env`:
-```env
-DATABASE_URL="postgresql://SEU_USER:SUA_SENHA@localhost:5432/rental_system"
-JWT_SECRET="uma-chave-secreta-longa-e-aleatoria"
-```
-
-### 3. Configurar banco de dados
-
-```bash
-# Criar as tabelas
+```sh
+npm ci
+npx prisma generate
 npm run db:push
-
-# Popular com dados de demo
-npm run db:seed
-```
-
-### 4. Rodar em desenvolvimento
-
-```bash
 npm run dev
 ```
 
-Acesse: **http://localhost:3000**
+DATABASE_URL="file:./dev.db" resolve prisma/dev.db. Em produção, use o caminho absoluto do volume, por exemplo file:/app/prisma/dev.db.
 
----
+Antes de publicar:
 
-## 📦 Deploy em Produção
-
-### Opção A: Vercel + Supabase (Recomendado)
-
-1. **Banco de dados:** Crie um projeto no [Supabase](https://supabase.com) e copie a connection string.
-
-2. **Deploy no Vercel:**
-```bash
-npm install -g vercel
-vercel --prod
-```
-
-3. **Variáveis no Vercel:** Adicione `DATABASE_URL` e `JWT_SECRET` em Settings → Environment Variables.
-
-4. **Migrate produção:**
-```bash
-npx prisma migrate deploy
-```
-
----
-
-### Opção B: VPS (Ubuntu)
-
-```bash
-# 1. Instalar Node.js
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-sudo apt-get install -y nodejs
-
-# 2. Instalar PostgreSQL
-sudo apt install postgresql postgresql-contrib
-
-# 3. Criar banco
-sudo -u postgres psql -c "CREATE DATABASE rental_system;"
-sudo -u postgres psql -c "CREATE USER rental_user WITH PASSWORD 'senha123';"
-sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE rental_system TO rental_user;"
-
-# 4. Clonar e instalar
-git clone <seu-repo>
-cd rental-system
-npm install
-
-# 5. Configurar .env
-cp .env.example .env
-nano .env  # Configure DATABASE_URL e JWT_SECRET
-
-# 6. Build e migrar
-npm run db:push
-npm run db:seed
+```sh
+npm run typecheck
+npm test
 npm run build
-
-# 7. Iniciar com PM2
-npm install -g pm2
-pm2 start npm --name "rentalpro" -- start
-pm2 startup
-pm2 save
 ```
 
----
+Os testes criam bancos temporários com dados sintéticos e simulam gateways e notificações. Não precisam de credenciais reais. O build deve usar banco descartável, nunca o operacional como fixture.
 
-## 📱 Instalar como App (PWA)
+Os seeds são demonstrações para ambientes descartáveis. **Não execute seed em produção.** O boot verifica o schema com prisma db push --skip-generate, sem autorizar perda de dados.
 
-### Android (Chrome)
-1. Abra o sistema no Chrome
-2. Toque no menu ⋮ → "Adicionar à tela inicial"
-3. Confirme a instalação
+## Regras de reserva e acesso
 
-### iOS (Safari)
-1. Abra no Safari
-2. Toque no ícone de compartilhar ↑
-3. "Adicionar à Tela de Início"
+- A cobrança inclui os dias de entrada e saída. Uma estadia de 2 noites corresponde a 3 diárias cobradas.
+- Cotação calculada no servidor; alterações cadastrais preservam valores. Total manual é uma ação explícita do painel.
+- Solicitações pendentes sem pagamento retêm disponibilidade por 2 horas. Criação e confirmação de pagamento verificam conflitos em transação.
+- O código comercial não é senha. Links de hóspede contêm token assinado com prazo e escopos; o painel emite novos links. Links antigos com apenas código precisam ser substituídos.
+- GUEST_ACCESS_SECRET é opcional; sem ele, a assinatura usa JWT_SECRET com separação de contexto. Alterar a chave invalida links existentes.
+- Limites de tentativas são mantidos em memória e pressupõem **uma réplica**. Antes de escalar, adotar limites compartilhados e reavaliar SQLite.
+- Pré-cadastro não libera entrada. Instruções e Wi-Fi exigem pagamento integral, confirmação e horário válido em São Paulo.
+- Dados de sessão exigem conexão. Logout limpa caches; a nova versão do service worker elimina o antigo offlineCache.
 
----
+## Pagamentos
 
-## 📲 Configurar WhatsApp
+Configurações PagBank, Pagar.me e Mercado Pago ficam no servidor. Não colocar tokens em variáveis NEXT_PUBLIC_*. card_gateway escolhe a integração de cartão; sem configuração explícita, permanece Pagar.me.
 
-O sistema usa a **Evolution API** (open source) para envio de mensagens.
+Webhooks consultam o gateway autenticado, conferem referência, moeda, valor e estado e registram recebimentos de forma idempotente. Cartão autorizado sem captura não é quitação. Pagamentos com conflito ou após expiração entram em conferência (REVIEW / PAYMENT_REVIEW), sem confirmar hospedagem automaticamente. A resolução manual revalida disponibilidade e saldo.
 
-### 1. Instalar Evolution API (Docker)
-```bash
-docker run -d \
-  --name evolution-api \
-  -p 8080:8080 \
-  -e AUTHENTICATION_API_KEY=minha-chave \
-  atendai/evolution-api:latest
-```
+Comprovantes novos ficam em private-receipts ao lado do SQLite, com download autorizado. scripts/migrate-payment-receipts.cjs migra legados verificando hash e atualizando URLs em transação. Fazer backup de banco **e arquivos** antes da primeira execução. Preservar arquivos do contêiner antigo no volume antes de substituí-lo.
 
-### 2. Criar instância
-```bash
-curl -X POST http://localhost:8080/instance/create \
-  -H "apikey: minha-chave" \
-  -H "Content-Type: application/json" \
-  -d '{"instanceName": "rental-instance"}'
-```
+## Calendários e notificações
 
-### 3. Conectar WhatsApp
-Acesse `http://localhost:8080` → escaneie o QR Code com seu WhatsApp.
+O workflow iCal sincroniza calendários externos a cada 30 minutos. CRON_SECRET no GitHub e no Railway deve coincidir. Calendários inválidos não substituem bloqueios; datas de saída iCal são exclusivas. URLs privadas não aparecem no catálogo.
 
-### 4. Configurar .env
-```env
-WHATSAPP_API_URL=http://localhost:8080
-WHATSAPP_API_KEY=minha-chave
-WHATSAPP_INSTANCE=rental-instance
-```
+SMTP requer host, porta, usuário, senha e remetente. O transporte usa TLS implícito (normalmente 465). O relatório retorna erro quando configuração/envio falha. Seu saldo representa movimentos do período, incluindo receitas, despesas e repasses registrados; não promete um repasse futuro.
 
----
+WhatsApp depende da Evolution API. Testes não enviam mensagens. Sem configuração, o envio não é marcado como concluído.
 
-## 🏗️ Estrutura do Projeto
+## Publicação e recuperação
 
-```
-rental-system/
-├── prisma/
-│   ├── schema.prisma          # Modelos do banco (User, Property, Reservation, Cleaning...)
-│   └── seed.ts                # Dados de demo
-├── src/
-│   ├── app/
-│   │   ├── (auth)/login/      # Tela de login
-│   │   ├── (dashboard)/       # Área principal (protegida)
-│   │   │   ├── page.tsx       # Dashboard
-│   │   │   ├── calendar/      # Calendário inteligente
-│   │   │   ├── cleaning/      # Painel Kanban de limpeza
-│   │   │   ├── reservations/  # Gestão de reservas
-│   │   │   ├── properties/    # Gestão de imóveis
-│   │   │   ├── financial/     # Módulo financeiro
-│   │   │   ├── cleaners/      # Faxineiras
-│   │   │   └── settings/      # Configurações
-│   │   └── api/               # API REST
-│   │       ├── auth/          # Login, logout, usuários
-│   │       ├── properties/    # CRUD imóveis
-│   │       ├── reservations/  # CRUD reservas + calendário
-│   │       ├── cleanings/     # CRUD limpezas
-│   │       ├── cleaners/      # CRUD faxineiras
-│   │       ├── financial/     # Transações financeiras
-│   │       └── dashboard/     # Agregações do dashboard
-│   ├── lib/
-│   │   ├── prisma.ts          # Cliente Prisma singleton
-│   │   ├── auth.ts            # JWT helpers
-│   │   ├── utils.ts           # Formatação, utilitários
-│   │   └── whatsapp.ts        # Integração WhatsApp
-│   └── hooks/
-│       └── useAuth.ts         # Zustand auth store
-└── public/
-    └── manifest.json          # PWA manifest
-```
+1. Validar tipos, testes e build. Revisar diff e preservar alterações de terceiros.
+2. Fazer backup verificável de SQLite e arquivos persistentes; registrar versão atual.
+3. Revisar PR; merge em main pode publicar automaticamente.
+4. Confirmar implantação e versão, disponibilidade, controles de acesso e iCal.
+5. Em regressão, reimplantar versão compatível. Não restaurar banco por cima de reservas novas sem analisar alterações desde o backup.
 
----
-
-## ⚙️ Automações Implementadas
-
-| Trigger | Ação Automática |
-|---------|----------------|
-| Nova reserva criada | Cria tarefa de limpeza para o dia do checkout |
-| Nova reserva criada | Envia WhatsApp de confirmação ao hóspede |
-| Tarefa de limpeza criada | Atribui faxineira por região e envia WhatsApp |
-| GET /api/cleanings | Atualiza status para LATE se prazo venceu |
-| Checkout feito | Marca limpeza como PENDING (prioridade) |
-
----
-
-## 🔐 Permissões por Perfil
-
-| Recurso | Admin | Equipe | Proprietário |
-|---------|-------|--------|--------------|
-| Dashboard | ✅ | ✅ | ✅ (só seus imóveis) |
-| Calendário | ✅ | ✅ | ✅ (só seus imóveis) |
-| Limpeza | ✅ | ✅ | ❌ |
-| Reservas (criar/editar) | ✅ | ✅ | ❌ |
-| Imóveis (criar/editar) | ✅ | ✅ | ❌ |
-| Financeiro | ✅ | ❌ | ✅ (visualização) |
-| Usuários | ✅ | ❌ | ❌ |
-
----
-
-## 🛠️ Scripts Úteis
-
-```bash
-npm run dev          # Desenvolvimento
-npm run build        # Build produção
-npm run start        # Servidor produção
-npm run db:push      # Sincronizar schema (sem migração)
-npm run db:migrate   # Criar migração
-npm run db:seed      # Popular dados demo
-npm run db:studio    # Prisma Studio (GUI do banco)
-```
-
----
-
-## 📊 Stack Tecnológica
-
-- **Frontend:** Next.js 14 (App Router), React 18, TypeScript
-- **Styling:** Tailwind CSS + animações Framer Motion
-- **Estado:** Zustand (auth) + React Query (em expansão)
-- **Backend:** Next.js API Routes (Node.js)
-- **ORM:** Prisma 5
-- **Banco:** PostgreSQL
-- **Auth:** JWT + httpOnly cookies
-- **PWA:** next-pwa + manifest.json
-- **Charts:** Recharts
-- **Toast:** react-hot-toast
-- **WhatsApp:** Evolution API / Z-API
-
----
-
-## 🔮 Próximos Passos (Roadmap)
-
-- [ ] Upload de fotos para imóveis (Cloudinary)
-- [ ] Drag & drop real no calendário (@dnd-kit)
-- [ ] Integração com Airbnb via iCal (importar reservas)
-- [ ] Relatórios PDF (repasse mensal ao proprietário)
-- [ ] App móvel nativo (React Native)
-- [ ] Notificações push (Firebase FCM)
-- [ ] Multi-tenant (múltiplas empresas)
-
----
-
-Desenvolvido com ❤️ para gestão eficiente de imóveis por temporada.
+[Regras de trabalho](AGENTS.md), [auditoria](docs/AUDITORIA-2026-09-17.md) e [continuidade](docs/CONTINUIDADE-2026-09-17.md).

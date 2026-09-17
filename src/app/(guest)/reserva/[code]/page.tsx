@@ -1,5 +1,7 @@
 "use client";
 
+import { useGuestAccess } from "@/hooks/useGuestAccess";
+
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
@@ -11,6 +13,8 @@ import { formatDate, formatCurrency, getStatusColor, getStatusLabel, cn } from "
 import Link from "next/link";
 
 interface Reservation {
+  paymentStatus: string;
+  checkInEligibility: { allowed: boolean; reason: string };
   id: string;
   code: string;
   guestName: string;
@@ -23,6 +27,8 @@ interface Reservation {
   notes: string;
   property: {
     name: string;
+    checkInTime: string;
+    checkOutTime: string;
     address: string;
     city: string;
     state: string;
@@ -49,6 +55,7 @@ const STATUS_STEPS = [
 ];
 
 export default function ReservationPortalPage() {
+  const { guestFetch, guestLink } = useGuestAccess();
   const { code } = useParams();
   const router = useRouter();
   const [reservation, setReservation] = useState<Reservation | null>(null);
@@ -56,7 +63,7 @@ export default function ReservationPortalPage() {
   const [notFound, setNotFound] = useState(false);
 
   useEffect(() => {
-    fetch(`/api/public/reservation?code=${code}`)
+    guestFetch(`/api/public/reservation?code=${code}`)
       .then((r) => r.json())
       .then((d) => {
         if (d.error) { setNotFound(true); }
@@ -64,7 +71,7 @@ export default function ReservationPortalPage() {
         setLoading(false);
       })
       .catch(() => { setNotFound(true); setLoading(false); });
-  }, [code]);
+  }, [code, guestFetch]);
 
   const isPropertyReady = reservation?.cleaning?.status === "DONE";
   const currentStep = STATUS_STEPS.findIndex((s) => s.key === reservation?.status);
@@ -81,7 +88,7 @@ export default function ReservationPortalPage() {
     <div className="max-w-md mx-auto text-center py-16">
       <AlertCircle className="w-16 h-16 text-slate-300 mx-auto mb-4" />
       <h2 className="text-xl font-bold text-slate-900 mb-2">Reserva não encontrada</h2>
-      <p className="text-slate-500 mb-6">Verifique o código e tente novamente.</p>
+      <p className="text-slate-500 mb-6">Use o link completo enviado pela administração. O código sozinho não libera acesso.</p>
       <Link href="/imoveis" className="bg-brand-600 text-white font-semibold px-6 py-3 rounded-xl hover:bg-brand-700 transition-colors">
         Ver imóveis disponíveis
       </Link>
@@ -129,6 +136,8 @@ export default function ReservationPortalPage() {
         </div>
       </motion.div>
 
+      {(reservation.paymentStatus === "REVIEW" || reservation.status === "PAYMENT_REVIEW") && <p role="alert" className="rounded-xl bg-amber-50 p-4 mb-4 text-amber-900">Seu pagamento precisa de conferência pela administração. Não faça outro pagamento enquanto aguardamos a análise.</p>}
+
       {/* Property info */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
         className="bg-white rounded-2xl p-5 shadow-card border border-slate-100 mb-4">
@@ -143,15 +152,15 @@ export default function ReservationPortalPage() {
           <div className="text-center p-3 bg-green-50 rounded-xl">
             <p className="text-[10px] text-green-600 font-bold uppercase">Check-in</p>
             <p className="font-bold text-green-700 text-sm mt-1">{formatDate(reservation.checkIn)}</p>
-            <p className="text-[10px] text-green-500">a partir das 15h</p>
+            <p className="text-[10px] text-green-500">a partir das {reservation.property.checkInTime || "14:00"}</p>
           </div>
           <div className="text-center p-3 bg-red-50 rounded-xl">
             <p className="text-[10px] text-red-600 font-bold uppercase">Check-out</p>
             <p className="font-bold text-red-700 text-sm mt-1">{formatDate(reservation.checkOut)}</p>
-            <p className="text-[10px] text-red-400">até as 11h</p>
+            <p className="text-[10px] text-red-400">até as {reservation.property.checkOutTime || "12:00"}</p>
           </div>
           <div className="text-center p-3 bg-slate-100 rounded-xl">
-            <p className="text-[10px] text-slate-500 font-bold uppercase">Noites</p>
+            <p className="text-[10px] text-slate-500 font-bold uppercase">Diárias cobradas</p>
             <p className="font-bold text-slate-700 text-sm mt-1">{reservation.nights}</p>
             <p className="text-[10px] text-slate-400"><Users size={9} className="inline" /> {reservation.guestCount} hósp.</p>
           </div>
@@ -204,7 +213,7 @@ export default function ReservationPortalPage() {
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}
         className="space-y-3">
         {reservation.status === "CONFIRMED" && (
-          <Link href={`/checkin/${reservation.code}`}
+          <Link href={guestLink(`/checkin/${reservation.code}`)}
             className="flex items-center justify-center gap-2 w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-4 rounded-2xl transition-colors text-base">
             ✅ Fazer check-in online
           </Link>

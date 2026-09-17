@@ -1,3 +1,5 @@
+import { beginPaymentAttempt, savePaymentAttempt, reconcilePayment, PaymentError } from "@/lib/payment-integrity";
+import { authorizeGuestRequest, createGuestLink } from "@/lib/guest-access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { cpfValido } from "@/lib/pagbank";
@@ -19,6 +21,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Codigo da reserva obrigatorio" }, { status: 400 });
     }
 
+    const denied = await authorizeGuestRequest(req, String(code), "payments:write");
+    if (denied) return denied;
     let reserva = await prisma.reservation.findUnique({
       where: { code: String(code).toUpperCase() },
       include: { property: { select: { name: true } } },
@@ -62,22 +66,20 @@ export async function POST(req: NextRequest) {
     const reqUrl = new URL(req.url);
     const origin = process.env.NEXT_PUBLIC_BASE_URL || `${reqUrl.protocol}//${reqUrl.host}`;
 
+    const attempt = await beginPaymentAttempt(reserva.id, "pagarme", "checkout");
     const link = await criarLinkCartao(apiKey, {
       referencia: reserva.code,
-      valorReais: Number(reserva.totalAmount),
+      idempotencyKey: attempt.key,
+      valorReais: attempt.amountCents / 100,
       nome: reserva.guestName || "Hospede",
       email: reserva.guestEmail || "hospede@reservasita.com.br",
       cpf: (reserva.guestCpf ?? informado).replace(/\D/g, ""),
       telefone: reserva.guestPhone,
       descricao: `Reserva ${reserva.property.name}`,
-      urlRetorno: `${origin}/pagar/${reserva.code}?status=success`,
+      urlRetorno: createGuestLink(reserva, `/pagar/${reserva.code}?status=success`, origin),
     });
 
-    // Guarda o pedido para o webhook conseguir ligar o pagamento à reserva
-    await prisma.reservation.update({
-      where: { id: reserva.id },
-      data: { mpPaymentId: link.orderId },
-    });
+    await savePaymentAttempt(reserva.id, attempt, link.orderId);
 
     return NextResponse.json({
       paymentUrl: link.paymentUrl,
@@ -85,6 +87,7 @@ export async function POST(req: NextRequest) {
       expiraEm: link.expiraEm,
     });
   } catch (e) {
+    if (e instanceof PaymentError) return NextResponse.json({ error: e.message }, { status: e.status });
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[pagarme-checkout]", msg);
     return NextResponse.json({ error: msg }, { status: 500 });

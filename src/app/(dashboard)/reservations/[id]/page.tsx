@@ -13,6 +13,7 @@ import { apiRequest, useAuthStore } from "@/hooks/useAuth";
 import { cn, formatCurrency, formatDate, formatDateTime, getStatusColor, getStatusLabel } from "@/lib/utils";
 import toast from "react-hot-toast";
 import Link from "next/link";
+import { withGuestAccess } from "@/hooks/useGuestAccess";
 
 interface GuestData {
   id: string;
@@ -25,6 +26,7 @@ interface GuestData {
 interface Reservation {
   id: string;
   code: string;
+  guestAccess?: { accessToken: string; accessExpiresAt: string };
   propertyId: string;
   guestName: string;
   guestEmail?: string;
@@ -86,8 +88,13 @@ export default function ReservationDetailPage() {
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
   const [generatingPayment, setGeneratingPayment] = useState(false);
+  const [manualPaymentOpen, setManualPaymentOpen] = useState(false);
+  const [receiptChecked, setReceiptChecked] = useState(false);
+  const [manualMethod, setManualMethod] = useState("");
+  const [manualAmount, setManualAmount] = useState("");
+  const [confirmingPayment, setConfirmingPayment] = useState(false);
 
-  const canEdit = user?.role !== "OWNER";
+  const canEdit = user?.role === "ADMIN" || user?.role === "TEAM";
 
   // Edit mode
   const [editMode, setEditMode] = useState(false);
@@ -103,10 +110,33 @@ export default function ReservationDetailPage() {
     manualTotal: "",
   });
   const [preview, setPreview] = useState<{
-    nights: number; totalAmount: number; cleaningFee: number;
+    key: string; diarias: number; totalAmount: number; cleaningFee: number;
     commission: number; ownerAmount: number;
   } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [quoteError, setQuoteError] = useState("");
+  const quoteKey = JSON.stringify([reservation?.propertyId, editData.checkIn, editData.checkOut, editData.guestCount, editData.manualTotal]);
+  const financialChange = !!reservation && (editData.checkIn !== reservation.checkIn.slice(0, 10) || editData.checkOut !== reservation.checkOut.slice(0, 10)
+    || Number(editData.guestCount) !== reservation.guestCount || (editData.manualTotal !== "" && Math.round(Number(editData.manualTotal) * 100) !== Math.round(Number(reservation.totalAmount) * 100)));
+  const currentPreview = preview?.key === quoteKey ? preview : null;
+
+  useEffect(() => {
+    let cancelled = false;
+    setPreview(null);
+    setQuoteError("");
+    if (!editMode || !financialChange || !reservation) { setQuoteLoading(false); return; }
+    const query = new URLSearchParams({ propertyId: reservation.propertyId, checkIn: editData.checkIn, checkOut: editData.checkOut, guestCount: editData.guestCount });
+    if (editData.manualTotal !== "") query.set("manualTotal", editData.manualTotal);
+    setQuoteLoading(true);
+    apiRequest("/api/reservations/quote?" + query).then(async response => {
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Não foi possível calcular a cotação.");
+      if (!cancelled) setPreview({ ...data.quote, key: quoteKey });
+    }).catch(error => { if (!cancelled) setQuoteError(error instanceof Error ? error.message : "Não foi possível calcular a cotação."); })
+      .finally(() => { if (!cancelled) setQuoteLoading(false); });
+    return () => { cancelled = true; };
+  }, [editMode, financialChange, reservation, editData.checkIn, editData.checkOut, editData.guestCount, editData.manualTotal, quoteKey]);
 
   useEffect(() => {
     apiRequest(`/api/reservations/${id}`)
@@ -160,14 +190,34 @@ export default function ReservationDetailPage() {
 
   function copyPaymentLink() {
     if (!reservation) return;
-    const url = `${window.location.origin}/pagar/${reservation.code}`;
+    const url = `${window.location.origin}${withGuestAccess(`/pagar/${reservation.code}`, reservation.guestAccess?.accessToken || "")}`;
     navigator.clipboard.writeText(url);
     toast.success("Link copiado!");
   }
 
+  async function confirmReceivedPayment() {
+    if (!reservation || !canEdit || confirmingPayment || !manualMethod.trim() || !receiptChecked) return;
+    setConfirmingPayment(true);
+    try {
+      const response = await apiRequest(`/api/reservations/${id}/confirm-payment`, {
+        method: "POST", body: JSON.stringify({ method: manualMethod.trim(),
+          ...(manualAmount !== "" ? { amount: Number(manualAmount) } : {}),
+          ...(reservation.paymentStatus === "REVIEW" ? { resolveReview: true } : {}),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Não foi possível confirmar o recebimento.");
+      setReservation(current => current ? { ...current, ...data.reservation } : current);
+      setManualPaymentOpen(false); setReceiptChecked(false); setManualAmount(""); setManualMethod("");
+      toast.success("Recebimento conferido e registrado.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível confirmar o recebimento.");
+    } finally { setConfirmingPayment(false); }
+  }
+
   function sendPaymentWhatsApp() {
     if (!reservation?.guestPhone) return;
-    const url = `${window.location.origin}/pagar/${reservation.code}`;
+    const url = `${window.location.origin}${withGuestAccess(`/pagar/${reservation.code}`, reservation.guestAccess?.accessToken || "")}`;
     const msg = encodeURIComponent(
       `Olá ${reservation.guestName}! 👋\n\nSegue o link para pagamento da sua reserva na *${reservation.property?.name}*.\n\n💳 ${url}\n\nAceitamos PIX e cartão de crédito em até 12x.\n\nCódigo da reserva: *${reservation.code}*`
     );
@@ -192,23 +242,9 @@ export default function ReservationDetailPage() {
     setEditMode(true);
   }
 
-  function calcPreview() {
-    if (!reservation || !editData.checkIn || !editData.checkOut) return;
-    const ci = new Date(editData.checkIn);
-    const co = new Date(editData.checkOut);
-    const nights = Math.max(1, Math.round((co.getTime() - ci.getTime()) / 86400000)) + 1;
-    const prop = (reservation as any).property;
-    const basePrice = prop?.basePrice ?? 0;
-    const cleaningFee = prop?.cleaningFee ?? Number(reservation.cleaningFee);
-    const commissionRate = prop?.commissionRate ?? 10;
-    const totalAmount = editData.manualTotal ? Number(editData.manualTotal) : basePrice * nights;
-    const commission = Math.round(totalAmount * commissionRate) / 100;
-    const ownerAmount = totalAmount + cleaningFee - commission;
-    setPreview({ nights, totalAmount, cleaningFee, commission, ownerAmount });
-  }
-
   async function saveEdit() {
     if (!reservation) return;
+    if (financialChange && (!currentPreview || quoteLoading)) return;
     setSaving(true);
     try {
       const payload: Record<string, unknown> = {
@@ -226,19 +262,21 @@ export default function ReservationDetailPage() {
         payload.checkOut = editData.checkOut;
       }
       if (editData.manualTotal) payload.manualTotal = editData.manualTotal;
+      if (financialChange && currentPreview) payload.expectedTotal = currentPreview.totalAmount;
 
       const res = await apiRequest(`/api/reservations/${id}`, {
         method: "PATCH",
         body: JSON.stringify(payload),
       });
       const data = await res.json();
+      if (data.code === "PRICE_CHANGED" && data.quote) setPreview({ ...data.quote, key: quoteKey });
       if (!res.ok) throw new Error(data.error);
       setReservation(data.reservation);
       setEditMode(false);
       setPreview(null);
       toast.success("Reserva atualizada!");
-    } catch {
-      toast.error("Erro ao salvar alterações");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Erro ao salvar alterações");
     } finally {
       setSaving(false);
     }
@@ -427,9 +465,8 @@ export default function ReservationDetailPage() {
             </div>
           </div>
 
-          {/* Recalculate button */}
-          {(editData.checkIn !== reservation.checkIn.slice(0, 10) ||
-            editData.checkOut !== reservation.checkOut.slice(0, 10)) && (
+          {/* Negotiated totals are explicit; clerical edits preserve existing values. */}
+          {(
             <div className="mb-4 space-y-3">
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1">
@@ -438,7 +475,7 @@ export default function ReservationDetailPage() {
                 <div className="flex items-center border border-slate-200 rounded-xl bg-white overflow-hidden focus-within:ring-2 focus-within:ring-brand-500">
                   <span className="px-3 py-2 text-sm font-semibold text-slate-500 bg-slate-50 border-r border-slate-200">R$</span>
                   <input
-                    type="number" step="0.01" min="0"
+                    type="number" step="0.01" min="0.01"
                     value={editData.manualTotal}
                     onChange={(e) => { setEditData({ ...editData, manualTotal: e.target.value }); setPreview(null); }}
                     className="flex-1 px-3 py-2 text-sm outline-none bg-transparent"
@@ -446,23 +483,20 @@ export default function ReservationDetailPage() {
                   />
                 </div>
               </div>
-              <button
-                onClick={calcPreview}
-                className="w-full flex items-center justify-center gap-2 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition"
-              >
-                <RefreshCw size={13} /> Recalcular valores
-              </button>
+              {quoteLoading && <p className="text-sm text-slate-500" role="status">Calculando cotação...</p>}
+              {quoteError && <p className="text-sm text-red-600" role="alert">{quoteError}</p>}
+              {!financialChange && <p className="text-xs text-slate-500">Alterações cadastrais mantêm os valores atuais da reserva.</p>}
 
               {/* Preview */}
-              {preview && (
+              {financialChange && currentPreview && (
                 <div className="p-4 bg-white border border-brand-200 rounded-xl space-y-2">
                   <p className="text-xs font-bold text-brand-700 mb-2">📊 Novos valores calculados</p>
                   {[
-                    { label: "Diárias",         value: `${preview.nights} diária${preview.nights !== 1 ? "s" : ""}`,         plain: true },
-                    { label: "Total reserva",   value: formatCurrency(preview.totalAmount),  color: "text-slate-900" },
-                    { label: "Taxa limpeza",    value: formatCurrency(preview.cleaningFee),  color: "text-slate-600" },
-                    { label: "Comissão",        value: formatCurrency(preview.commission),   color: "text-red-500" },
-                    { label: "Repasse prop.",   value: formatCurrency(preview.ownerAmount),  color: "text-green-600" },
+                    { label: "Diárias",         value: `${currentPreview.diarias} diária${currentPreview.diarias !== 1 ? "s" : ""}`,         plain: true },
+                    { label: "Total reserva",   value: formatCurrency(currentPreview.totalAmount),  color: "text-slate-900" },
+                    { label: "Taxa limpeza",    value: formatCurrency(currentPreview.cleaningFee),  color: "text-slate-600" },
+                    { label: "Comissão",        value: formatCurrency(currentPreview.commission),   color: "text-red-500" },
+                    { label: "Repasse prop.",   value: formatCurrency(currentPreview.ownerAmount),  color: "text-green-600" },
                   ].map(({ label, value, color, plain }) => (
                     <div key={label} className="flex justify-between items-center text-sm">
                       <span className="text-slate-500">{label}</span>
@@ -513,7 +547,7 @@ export default function ReservationDetailPage() {
 
           <button
             onClick={saveEdit}
-            disabled={saving}
+            disabled={saving || (financialChange && (quoteLoading || !currentPreview))}
             className="w-full flex items-center justify-center gap-2 py-3 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-xl transition disabled:opacity-60"
           >
             {saving
@@ -532,7 +566,7 @@ export default function ReservationDetailPage() {
           {[
             { label: "Total da reserva", value: Number(reservation.totalAmount), color: "text-slate-900" },
             { label: "Taxa de limpeza", value: Number(reservation.cleaningFee), color: "text-slate-600" },
-            { label: "Comissão (10%)", value: Number(reservation.commission), color: "text-red-500" },
+            { label: "Comissão", value: Number(reservation.commission), color: "text-red-500" },
             { label: "Repasse proprietário", value: Number(reservation.ownerAmount), color: "text-green-600" },
           ].map(({ label, value, color }) => (
             <div key={label} className="flex justify-between items-center py-1.5 border-b border-slate-50 last:border-0">
@@ -617,11 +651,14 @@ export default function ReservationDetailPage() {
               "bg-green-50 text-green-600 border-green-200": reservation.paymentStatus === "PAID",
               "bg-red-50 text-red-600 border-red-200": reservation.paymentStatus === "FAILED",
               "bg-slate-50 text-slate-500 border-slate-200": reservation.paymentStatus === "REFUNDED",
+              "bg-amber-50 text-amber-800 border-amber-300": reservation.paymentStatus === "REVIEW" || reservation.paymentStatus === "PARTIAL",
             })}>
               {reservation.paymentStatus === "PENDING" ? "⏳ Pendente"
                 : reservation.paymentStatus === "PAID" ? "✓ Pago"
                 : reservation.paymentStatus === "FAILED" ? "✗ Recusado"
-                : "Reembolsado"}
+                : reservation.paymentStatus === "REVIEW" ? "Em conferência"
+                : reservation.paymentStatus === "PARTIAL" ? "Parcialmente pago"
+                : reservation.paymentStatus === "REFUNDED" ? "Reembolsado" : reservation.paymentStatus}
             </span>
           )}
         </div>
@@ -633,10 +670,34 @@ export default function ReservationDetailPage() {
           </div>
         )}
 
+        {canEdit && reservation.paymentStatus !== "PAID" && !["CANCELLED", "CANCELED", "CHECKED_OUT"].includes(reservation.status) && (
+          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 space-y-3">
+            <button type="button" onClick={() => { setManualPaymentOpen(value => !value); setReceiptChecked(false); }} className="text-sm font-semibold text-amber-900">
+              {reservation.paymentStatus === "REVIEW" ? "Conferir recebimento e resolver revisão" : "Registrar recebimento manual"}
+            </button>
+            {manualPaymentOpen && <>
+              <p className="text-xs text-amber-900">Confira os comprovantes e o saldo antes de confirmar. Esta ação registra o recebimento integral restante e não realiza cobrança ou estorno no gateway.</p>
+              <label className="block text-xs font-semibold">Forma do recebimento
+                <input className="input-base mt-1" value={manualMethod} onChange={event => setManualMethod(event.target.value)} placeholder="Ex.: transferência bancária" />
+              </label>
+              <label className="block text-xs font-semibold">Valor recebido nesta confirmação (opcional)
+                <input className="input-base mt-1" type="number" min="0" step="0.01" value={manualAmount} onChange={event => setManualAmount(event.target.value)} placeholder="Saldo calculado pelo sistema" />
+              </label>
+              <label className="flex gap-2 items-start text-sm text-amber-950">
+                <input type="checkbox" checked={receiptChecked} onChange={event => setReceiptChecked(event.target.checked)} className="mt-1" />
+                Conferi o recebimento, os comprovantes e o saldo desta reserva.
+              </label>
+              <button type="button" onClick={confirmReceivedPayment} disabled={confirmingPayment || !receiptChecked || !manualMethod.trim()} className="btn-primary w-full disabled:opacity-50">
+                {confirmingPayment ? "Confirmando..." : "Confirmar recebimento conferido"}
+              </button>
+            </>}
+          </div>
+        )}
+
         <div className="flex flex-col gap-2">
           <button
             onClick={generatePaymentLink}
-            disabled={generatingPayment}
+            disabled={generatingPayment || !canEdit || reservation.paymentStatus === "REVIEW" || reservation.paymentStatus === "PAID" || ["CANCELLED", "CANCELED", "CHECKED_OUT", "PAYMENT_REVIEW"].includes(reservation.status)}
             className="flex items-center justify-center gap-2 py-2.5 px-3 bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold rounded-xl transition disabled:opacity-60"
           >
             {generatingPayment
@@ -657,7 +718,7 @@ export default function ReservationDetailPage() {
                   <MessageCircle size={12} /> WhatsApp
                 </button>
               )}
-              <a href={`/pagar/${reservation.code}`} target="_blank"
+              <a href={withGuestAccess(`/pagar/${reservation.code}`, reservation.guestAccess?.accessToken || "")} target="_blank"
                 className="flex items-center justify-center gap-1.5 px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition">
                 <Link2 size={12} />
               </a>
@@ -672,7 +733,7 @@ export default function ReservationDetailPage() {
         <p className="text-xs font-semibold text-slate-400 uppercase mb-3">Contrato</p>
         <div className="flex gap-2 flex-wrap">
           <a
-            href={`/api/public/contract/${reservation.code}`}
+            href={withGuestAccess(`/api/public/contract/${reservation.code}`, reservation.guestAccess?.accessToken || "")}
             target="_blank"
             rel="noopener noreferrer"
             className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 bg-slate-900 hover:bg-black text-white text-xs font-semibold rounded-xl transition"
@@ -680,7 +741,7 @@ export default function ReservationDetailPage() {
             <FileSignature size={14} /> 📄 Contrato PDF
           </a>
           <a
-            href={`/contrato/${reservation.code}`}
+            href={withGuestAccess(`/contrato/${reservation.code}`, reservation.guestAccess?.accessToken || "")}
             target="_blank"
             rel="noopener noreferrer"
             className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition"
@@ -690,7 +751,7 @@ export default function ReservationDetailPage() {
           {reservation.guestPhone && (
             <button
               onClick={() => {
-                const url = `${window.location.origin}/api/public/contract/${reservation.code}`;
+                const url = `${window.location.origin}${withGuestAccess(`/api/public/contract/${reservation.code}`, reservation.guestAccess?.accessToken || "")}`;
                 const msg = encodeURIComponent(
                   `Olá ${reservation.guestName}! 👋\n\nSegue o contrato da sua reserva na *Reservas Ita*.\n\n📄 Acesse o contrato pelo link:\n${url}\n\nCódigo: *${reservation.code}*\n\nQualquer dúvida estamos à disposição!`
                 );

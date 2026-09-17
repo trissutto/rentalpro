@@ -1,3 +1,5 @@
+import { beginPaymentAttempt, savePaymentAttempt, reconcilePayment, PaymentError } from "@/lib/payment-integrity";
+import { authorizeGuestRequest } from "@/lib/guest-access";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendMail, pixEmailHtml } from "@/lib/email";
@@ -13,6 +15,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Dados obrigatórios ausentes" }, { status: 400 });
     }
 
+    const denied = await authorizeGuestRequest(req, String(code), "payments:write");
+    if (denied) return denied;
     // Get reservation
     const reservation = await prisma.reservation.findUnique({
       where: { code: String(code).toUpperCase() },
@@ -41,10 +45,15 @@ export async function POST(req: NextRequest) {
     const isLocalhost = reqUrl.hostname === "localhost" || reqUrl.hostname === "127.0.0.1";
     const origin = process.env.NEXT_PUBLIC_BASE_URL || `${reqUrl.protocol}//${reqUrl.host}`;
 
+    const attempt = await beginPaymentAttempt(reservation.id, "mercadopago", String(formData.payment_method_id));
     // Build payment payload — merge brick formData with reservation data
     const paymentPayload = {
-      ...formData,
-      transaction_amount: Number(reservation.totalAmount),
+      token: formData.token,
+      payment_method_id: formData.payment_method_id,
+      issuer_id: formData.issuer_id,
+      installments: Math.max(1, Math.min(12, Number(formData.installments) || 1)),
+      payer: formData.payer,
+      transaction_amount: attempt.amountCents / 100,
       description: `Reserva ${reservation.property.name} — ${reservation.code}`,
       external_reference: reservation.code,
       // Only set notification_url in production (requires public HTTPS)
@@ -52,7 +61,7 @@ export async function POST(req: NextRequest) {
     };
 
     // Idempotency key prevents duplicate charges on retry
-    const idempotencyKey = `${reservation.code}-${formData.payment_method_id}-${Date.now()}`;
+    const idempotencyKey = attempt.key;
 
     const mpRes = await fetch("https://api.mercadopago.com/v1/payments", {
       method: "POST",
@@ -67,65 +76,15 @@ export async function POST(req: NextRequest) {
     const payment = await mpRes.json();
 
     if (!mpRes.ok) {
-      console.error("MP payment error:", JSON.stringify(payment));
+      console.error("MP payment error:", "Gateway rejeitou a solicitação");
       return NextResponse.json(
         { error: payment.message || payment.cause?.[0]?.description || "Erro ao processar pagamento" },
         { status: mpRes.status }
       );
     }
 
-    // Map payment status
-    const statusMap: Record<string, string> = {
-      approved: "PAID",
-      pending: "PENDING",
-      in_process: "PENDING",
-      rejected: "FAILED",
-      cancelled: "FAILED",
-    };
-    const paymentStatus = statusMap[payment.status] || "PENDING";
-
-    const paymentMethod = payment.payment_type_id === "credit_card"
-      ? `Cartão de Crédito (${payment.installments}x)`
-      : payment.payment_type_id === "bank_transfer"
-        ? "PIX"
-        : payment.payment_type_id === "debit_card"
-          ? "Cartão de Débito"
-          : payment.payment_method_id || "Outro";
-
-    // Update reservation
-    await prisma.reservation.update({
-      where: { id: reservation.id },
-      data: {
-        mpPaymentId: String(payment.id),
-        paymentStatus,
-        paymentMethod,
-        paidAt: paymentStatus === "PAID" ? new Date() : undefined,
-        ...(paymentStatus === "PAID" && reservation.status === "PENDING"
-          ? { status: "CONFIRMED" }
-          : {}),
-      },
-    });
-
-    // Create financial transaction if paid
-    if (paymentStatus === "PAID") {
-      const existing = await prisma.financialTransaction.findFirst({
-        where: { reservationId: reservation.id, category: "RESERVATION_INCOME" },
-      });
-      if (!existing) {
-        await prisma.financialTransaction.create({
-          data: {
-            reservationId: reservation.id,
-            propertyId: reservation.propertyId,
-            type: "INCOME",
-            category: "RESERVATION_INCOME",
-            description: `Reserva ${reservation.code} — ${reservation.guestName} (${paymentMethod})`,
-            amount: Number(reservation.totalAmount),
-            isPaid: true,
-            paidAt: new Date(),
-          },
-        });
-      }
-    }
+    await savePaymentAttempt(reservation.id, attempt, String(payment.id));
+    const { paymentStatus } = await reconcilePayment("mercadopago", String(payment.id));
 
     // Send PIX email if payment method is bank_transfer (PIX) and guest has email
     if (
@@ -173,8 +132,9 @@ export async function POST(req: NextRequest) {
     }
 
     // Return full MP payment response (brick uses it to show QR code for PIX)
-    return NextResponse.json(payment);
+    return NextResponse.json({ id: payment.id, status: paymentStatus === "PAID" ? "approved" : paymentStatus === "FAILED" ? "rejected" : "pending", paymentStatus, point_of_interaction: payment.point_of_interaction });
   } catch (err) {
+    if (err instanceof PaymentError) return NextResponse.json({ error: err.message }, { status: err.status });
     console.error("Erro no processamento de pagamento:", err);
     return NextResponse.json({ error: "Erro interno ao processar pagamento" }, { status: 500 });
   }

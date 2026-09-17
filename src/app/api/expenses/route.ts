@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-export const FIXED_CATEGORIES = ["AGUA", "LUZ", "IPTU", "INTERNET", "JARDIM", "PISCINA"];
-export const VARIABLE_CATEGORIES = ["MAINTENANCE", "SUPPLIES", "CLEANING_COST", "INSURANCE", "OTHER"];
-export const ALL_CATEGORIES = [...FIXED_CATEGORIES, ...VARIABLE_CATEGORIES];
+const FIXED_CATEGORIES = ["AGUA", "LUZ", "IPTU", "INTERNET", "JARDIM", "PISCINA"];
+const VARIABLE_CATEGORIES = ["MAINTENANCE", "SUPPLIES", "CLEANING_COST", "INSURANCE", "OTHER"];
+const ALL_CATEGORIES = [...FIXED_CATEGORIES, ...VARIABLE_CATEGORIES];
 
 export async function GET(req: NextRequest) {
   const user = await getAuthUser(req);

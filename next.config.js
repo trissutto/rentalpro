@@ -3,14 +3,13 @@ const withPWA = require("next-pwa")({
   register: true,
   skipWaiting: true,
   disable: process.env.NODE_ENV === "development",
+  cacheStartUrl: false,
+  dynamicStartUrl: false,
+  customWorkerDir: "worker",
   runtimeCaching: [
     {
       urlPattern: /^https?.*/,
-      handler: "NetworkFirst",
-      options: {
-        cacheName: "offlineCache",
-        expiration: { maxEntries: 200 },
-      },
+      handler: "NetworkOnly",
     },
   ],
 });
@@ -19,21 +18,15 @@ const withPWA = require("next-pwa")({
 const nextConfig = {
   output: 'standalone',
   reactStrictMode: true,
-  typescript: {
-    // O cliente Prisma gerado está truncado no ambiente de sandbox (sem acesso de rede
-    // para regenerar). Nosso código-fonte não tem erros TS — apenas o arquivo
-    // node_modules/.prisma/client/index.d.ts está incompleto.
-    ignoreBuildErrors: true,
-  },
   images: {
     domains: ["localhost", "res.cloudinary.com"],
   },
   experimental: {
-    serverActions: { allowedOrigins: ["localhost:3000"] },
-    serverBodySizeLimit: '50mb',
+    serverActions: { allowedOrigins: ["localhost:3000"], bodySizeLimit: '50mb' },
   },
   async headers() {
     return [
+      { source: "/api/:path*", headers: [{ key: "Cache-Control", value: "private, no-store" }] },
       {
         source: "/:path*",
         headers: [
@@ -42,7 +35,7 @@ const nextConfig = {
           // Navegador não tenta "adivinhar" o tipo do arquivo servido
           { key: "X-Content-Type-Options", value: "nosniff" },
           // Não vaza a URL interna completa ao sair do site
-          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "Referrer-Policy", value: "no-referrer" },
           // Nenhuma página precisa de câmera, microfone ou localização
           { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
           // Só HTTPS a partir da primeira visita
