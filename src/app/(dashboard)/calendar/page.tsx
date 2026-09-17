@@ -1063,7 +1063,7 @@ export default function CalendarPage() {
                 {icalPropertyId && (
                   <div className="p-3 bg-brand-50 rounded-xl border border-brand-100">
                     <p className="text-xs font-semibold text-brand-700 mb-1.5">
-                      🔄 Link para exportar o RentalPro → Airbnb
+                      🔄 Link para exportar o Reservas Ita → Airbnb
                     </p>
                     <p className="text-[10px] text-brand-600 mb-2">
                       Cole esta URL no Airbnb em: Calendário → Importar calendário
@@ -1088,7 +1088,7 @@ export default function CalendarPage() {
 
                 {/* iCal URL */}
                 <div>
-                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">URL do iCal do Airbnb → RentalPro</label>
+                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">URL do iCal do Airbnb → Reservas Ita</label>
                   <input
                     type="url"
                     value={icalUrl}

@@ -95,11 +95,13 @@ function CardForm({
   onSuccess,
   publicKey,
   label = "Pagar",
+  maxInstallments = 12,
 }: {
   amount: number;
   onSuccess: (data: { encryptedCard: string; holderName: string; holderCpf: string; installments: number }) => void;
   publicKey: string | null;
   label?: string;
+  maxInstallments?: number;
 }) {
   const [cardNumber, setCardNumber] = useState("");
   const [cardName, setCardName] = useState("");
@@ -255,7 +257,7 @@ function CardForm({
             onChange={e => setInstallments(Number(e.target.value))}
             className="w-full appearance-none border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-400 pr-8"
           >
-            {Array.from({ length: 12 }, (_, i) => i + 1).map(n => (
+            {Array.from({ length: maxInstallments }, (_, i) => i + 1).map(n => (
               <option key={n} value={n}>
                 {n === 1
                   ? `1x de ${fmt(amount)} (sem juros)`
@@ -343,6 +345,9 @@ export default function PagarPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [publicKey, setPublicKey] = useState<string | null>(null);
+  const [cardGateway, setCardGateway] = useState<"pagbank" | "pagarme">("pagarme");
+  const [cardConfigLoading, setCardConfigLoading] = useState(true);
+  const [cardConfigError, setCardConfigError] = useState("");
 
   const [payMode, setPayMode] = useState<PayMode>("full");
   const [fullMethod, setFullMethod] = useState<FullMethod>("pix");
@@ -359,6 +364,8 @@ export default function PagarPage() {
   const [cardSubmitting, setCardSubmitting] = useState(false);
   const [cardError, setCardError] = useState("");
   const [cardSuccess, setCardSuccess] = useState("");
+  const [cardPending, setCardPending] = useState(false);
+  const cardSubmitLocked = useRef(false);
 
   // Installment selector
   const [maxInstallments, setMaxInstallments] = useState(0);
@@ -383,6 +390,11 @@ export default function PagarPage() {
       .then(d => {
         if (d.error) { setError(d.error); return; }
         setReservation(d.reservation);
+        if (d.reservation.paymentStatus === "FAILED" && cardSubmitLocked.current) {
+          cardSubmitLocked.current = false;
+          setCardPending(false);
+          setCardError("Pagamento recusado. Você pode tentar novamente.");
+        }
         // Já informou o CPF antes: não faz o hóspede digitar de novo
         if (d.reservation.guestCpf) setCpfPix(formatarCpf(d.reservation.guestCpf));
         if (d.reservation.installmentPlan) {
@@ -405,8 +417,16 @@ export default function PagarPage() {
 
   useEffect(() => {
     fetch("/api/public/pagbank-config")
-      .then(r => r.json())
-      .then(d => { if (d.publicKey) setPublicKey(d.publicKey); });
+      .then(r => {
+        if (!r.ok) throw new Error("Falha ao carregar configuração de pagamento");
+        return r.json();
+      })
+      .then(d => {
+        if (d.publicKey) setPublicKey(d.publicKey);
+        setCardGateway(d.cardGateway === "pagbank" ? "pagbank" : "pagarme");
+      })
+      .catch(() => setCardConfigError("Não foi possível carregar o pagamento com cartão. Recarregue a página para tentar novamente."))
+      .finally(() => setCardConfigLoading(false));
   }, []);
 
   // ── Compute max installments ─────────────────────────────────────────
@@ -517,7 +537,9 @@ export default function PagarPage() {
   }
 
   async function handleCardSubmit(cardData: { encryptedCard: string; holderName: string; holderCpf: string; installments: number }) {
-    if (!reservation) return;
+    if (!reservation || cardSubmitLocked.current) return;
+    cardSubmitLocked.current = true;
+    let keepPaymentLocked = false;
     setCardSubmitting(true);
     setCardError("");
     try {
@@ -527,10 +549,24 @@ export default function PagarPage() {
         body: JSON.stringify({ code: reservation.code, ...cardData }),
       });
       const data = await res.json();
-      if (!res.ok) { setCardError(data.error || "Pagamento recusado"); return; }
-      setCardSuccess(data.message || "Pagamento processado!");
-      setTimeout(() => loadReservation(), 1500);
+      if (!res.ok || data.error || data.paymentStatus === "FAILED") {
+        setCardError(data.error || "Pagamento recusado. Verifique os dados ou tente outro cartão.");
+        return;
+      }
+      if (data.paymentStatus === "PAID") {
+        keepPaymentLocked = true;
+        setCardSuccess("Pagamento aprovado!");
+        setTimeout(() => loadReservation(), 1500);
+      } else if (data.paymentStatus === "PENDING") {
+        keepPaymentLocked = true;
+        setCardPending(true);
+      } else {
+        setCardError("Não foi possível confirmar o resultado do pagamento. Verifique o status da reserva antes de tentar novamente.");
+      }
+    } catch {
+      setCardError("Falha de conexão ao processar o cartão. Verifique o status da reserva antes de tentar novamente.");
     } finally {
+      if (!keepPaymentLocked) cardSubmitLocked.current = false;
       setCardSubmitting(false);
     }
   }
@@ -732,7 +768,7 @@ export default function PagarPage() {
         <div className="mb-6">
 
           {/* Mode selector */}
-          {!planCreated && maxInstallments >= 1 && (
+          {!planCreated && maxInstallments >= 1 && !cardSubmitting && !cardPending && !cardSuccess && (
             <div className="flex bg-slate-100 rounded-2xl p-1 mb-5">
               <button
                 onClick={() => { setPayMode("full"); setPixData(null); setCardError(""); setCardSuccess(""); }}
@@ -757,7 +793,7 @@ export default function PagarPage() {
           {payMode === "full" && !planCreated && (
             <div>
               {/* PIX / Card method switch */}
-              {!pixData && !cardSuccess && (
+              {!pixData && !cardSubmitting && !cardPending && !cardSuccess && (
                 <div className="flex bg-slate-100 rounded-xl p-1 mb-4">
                   <button
                     onClick={() => { setFullMethod("pix"); setCardError(""); }}
@@ -827,7 +863,7 @@ export default function PagarPage() {
               )}
 
               {/* Credit Card */}
-              {fullMethod === "card" && !cardSuccess && (
+              {fullMethod === "card" && !cardSuccess && !cardPending && (
                 <div className="bg-white border border-slate-200 rounded-2xl p-5">
                   <p className="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2">
                     <CreditCard size={16} className="text-brand-500" /> Dados do cartão
@@ -838,32 +874,65 @@ export default function PagarPage() {
                       {cardError}
                     </div>
                   )}
-                  <p className="text-xs text-slate-500 mb-4">
-                    Você será levado ao ambiente seguro do Pagar.me para informar
-                    os dados do cartão. Parcelamento em até 6x sem juros.
+                  {cardConfigLoading ? (
+                    <p className="text-sm text-slate-500 flex items-center gap-2" role="status">
+                      <Loader2 size={16} className="animate-spin" /> Carregando pagamento com cartão...
+                    </p>
+                  ) : cardConfigError ? (
+                    <p className="text-xs text-red-700" role="alert">{cardConfigError}</p>
+                  ) : cardGateway === "pagbank" ? (
+                    <fieldset disabled={cardSubmitting}>
+                      <CardForm
+                        amount={Number(reservation.totalAmount)}
+                        publicKey={publicKey}
+                        onSuccess={handleCardSubmit}
+                        maxInstallments={6}
+                        label={cardSubmitting ? "Processando..." : `Pagar ${fmt(Number(reservation.totalAmount))} no cartão`}
+                      />
+                    </fieldset>
+                  ) : (
+                    <>
+                      <p className="text-xs text-slate-500 mb-4">
+                        Você será levado ao ambiente seguro do Pagar.me para informar
+                        os dados do cartão. Parcelamento em até 6x sem juros.
+                      </p>
+
+                      <div className="text-left mb-4">
+                        <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                          CPF do pagador
+                        </label>
+                        <input
+                          inputMode="numeric"
+                          autoComplete="off"
+                          value={cpfPix}
+                          onChange={e => setCpfPix(formatarCpf(e.target.value))}
+                          placeholder="000.000.000-00"
+                          className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-mono tracking-wide focus:outline-none focus:ring-2 focus:ring-brand-400"
+                        />
+                      </div>
+
+                      <button
+                        onClick={handleCardCheckout}
+                        disabled={cardSubmitting || cpfPix.replace(/\D/g, "").length !== 11}
+                        className="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white font-bold py-3.5 rounded-2xl flex items-center justify-center gap-2 transition-colors shadow-lg shadow-brand-500/20"
+                      >
+                        {cardSubmitting ? <Loader2 size={18} className="animate-spin" /> : <CreditCard size={18} />}
+                        {cardSubmitting ? "Abrindo pagamento..." : `Pagar ${fmt(Number(reservation.totalAmount))} no cartão`}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {cardPending && (
+                <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 text-center" role="status">
+                  <Clock className="w-12 h-12 text-amber-500 mx-auto mb-3" />
+                  <p className="font-bold text-amber-800">Pagamento em análise</p>
+                  <p className="text-xs text-amber-700 mt-1">
+                    A operadora ainda está analisando o pagamento. Aguarde a confirmação antes de fazer uma nova tentativa.
                   </p>
-
-                  <div className="text-left mb-4">
-                    <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-                      CPF do pagador
-                    </label>
-                    <input
-                      inputMode="numeric"
-                      autoComplete="off"
-                      value={cpfPix}
-                      onChange={e => setCpfPix(formatarCpf(e.target.value))}
-                      placeholder="000.000.000-00"
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-mono tracking-wide focus:outline-none focus:ring-2 focus:ring-brand-400"
-                    />
-                  </div>
-
-                  <button
-                    onClick={handleCardCheckout}
-                    disabled={cardSubmitting || cpfPix.replace(/\D/g, "").length !== 11}
-                    className="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white font-bold py-3.5 rounded-2xl flex items-center justify-center gap-2 transition-colors shadow-lg shadow-brand-500/20"
-                  >
-                    {cardSubmitting ? <Loader2 size={18} className="animate-spin" /> : <CreditCard size={18} />}
-                    {cardSubmitting ? "Abrindo pagamento..." : `Pagar ${fmt(Number(reservation.totalAmount))} no cartão`}
+                  <button onClick={loadReservation} className="mt-4 text-sm font-semibold text-amber-800 underline">
+                    Verificar status
                   </button>
                 </div>
               )}

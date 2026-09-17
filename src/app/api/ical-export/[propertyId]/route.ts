@@ -63,7 +63,7 @@ export async function GET(
   const lines: string[] = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//RentalPro//Calendar//PT",
+    "PRODID:-//Reservas Ita//Calendar//PT",
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
     `X-WR-CALNAME:${propName}`,

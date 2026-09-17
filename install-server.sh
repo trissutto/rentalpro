@@ -1,6 +1,6 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════════════
-#  RentalPro — Script de instalação automática no VPS (Ubuntu 22.04)
+#  Reservas Ita — Script de instalação automática no VPS (Ubuntu 22.04)
 #  Execute como root: bash install-server.sh
 # ═══════════════════════════════════════════════════════════════════
 
@@ -15,7 +15,7 @@ NODE_VERSION="20"
 
 echo ""
 echo "╔══════════════════════════════════════════╗"
-echo "║   RentalPro — Instalação no Servidor     ║"
+echo "║   Reservas Ita — Instalação no Servidor  ║"
 echo "╚══════════════════════════════════════════╝"
 echo ""
 

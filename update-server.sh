@@ -1,13 +1,13 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════
-#  RentalPro — Atualização do sistema em produção
+#  Reservas Ita — Atualização do sistema em produção
 #  Execute: bash update-server.sh
 # ═══════════════════════════════════════════════════════════
 
 APP_DIR="/var/www/rentalpro"
 cd $APP_DIR
 
-echo "🔄 Atualizando RentalPro..."
+echo "🔄 Atualizando Reservas Ita..."
 
 # Puxar últimas alterações do Git
 git pull origin main

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { syncIcalUrl } from "@/lib/ical";
+import { ICalSyncError, readIcalSources, syncIcalUrl } from "@/lib/ical";
 import { checkCronSecret } from "@/lib/cron-auth";
 
 /**
@@ -13,7 +13,8 @@ import { checkCronSecret } from "@/lib/cron-auth";
  *   curl "http://localhost:3000/api/cron/ical-sync?secret=<CRON_SECRET>"
  */
 export async function GET(req: NextRequest) {
-  const denied = checkCronSecret(new URL(req.url).searchParams.get("secret") ?? req.headers.get("x-cron-secret"));
+  const bearer = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+  const denied = checkCronSecret(req.headers.get("x-cron-secret") ?? bearer ?? new URL(req.url).searchParams.get("secret"));
   if (denied) return denied;
 
   const startedAt = Date.now();
@@ -37,8 +38,13 @@ export async function GET(req: NextRequest) {
 
   // 2. Sync each URL
   for (const prop of properties) {
-    let urls: { url: string; label: string; source: string }[] = [];
-    try { urls = JSON.parse(prop.icalUrls ?? "[]"); } catch { continue; }
+    let urls;
+    try {
+      urls = readIcalSources(prop.icalUrls);
+    } catch {
+      results.push({ propertyId: prop.id, propertyName: prop.name, source: "configuração", created: 0, error: "Configuração iCal inválida. Os bloqueios foram preservados." });
+      continue;
+    }
 
     for (const entry of urls) {
       try {
@@ -46,7 +52,7 @@ export async function GET(req: NextRequest) {
         results.push({
           propertyId:   prop.id,
           propertyName: prop.name,
-          source:       entry.source,
+          source:       res.source,
           created:      res.created,
         });
       } catch (e: unknown) {
@@ -55,7 +61,7 @@ export async function GET(req: NextRequest) {
           propertyName: prop.name,
           source:       entry.source,
           created:      0,
-          error:        e instanceof Error ? e.message : String(e),
+          error:        e instanceof ICalSyncError ? e.message : "Falha ao sincronizar. Os bloqueios anteriores foram preservados.",
         });
       }
     }
@@ -68,12 +74,13 @@ export async function GET(req: NextRequest) {
   console.log(`[iCal cron] ${results.length} fontes sincronizadas, ${totalCreated} bloqueios criados, ${errors.length} erros — ${elapsed}ms`);
 
   return NextResponse.json({
-    ok:           true,
-    synced:       results.length,
+    ok:           errors.length === 0,
+    attempted:    results.length,
+    synced:       results.length - errors.length,
     totalCreated,
     errors:       errors.length,
     elapsedMs:    elapsed,
     results,
     timestamp:    new Date().toISOString(),
-  });
+  }, { status: errors.length ? 502 : 200, headers: { "Cache-Control": "no-store" } });
 }

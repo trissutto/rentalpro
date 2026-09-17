@@ -813,7 +813,7 @@ export default function SettingsPage() {
         Sair da conta
       </button>
 
-      <p className="text-center text-xs text-slate-300 mt-6 mb-2">RentalPro v1.0.0</p>
+      <p className="text-center text-xs text-slate-300 mt-6 mb-2">Reservas Ita v1.0.0</p>
     </div>
   );
 }

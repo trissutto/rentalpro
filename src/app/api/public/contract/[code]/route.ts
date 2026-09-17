@@ -313,7 +313,7 @@ def make_header(canvas, doc):
     canvas.drawRightString(W - 2.5*cm, H - 19, 'Reserva: ${r.code}')
     canvas.setFillColor(colors.HexColor('#94a3b8'))
     canvas.setFont('Helvetica', 7.5)
-    canvas.drawString(2.5*cm, 16, 'Emitido em: ${generatedDate}  |  Documento gerado automaticamente pelo RentalPro')
+    canvas.drawString(2.5*cm, 16, 'Emitido em: ${generatedDate}  |  Documento gerado automaticamente pelo Reservas Ita')
     canvas.drawRightString(W - 2.5*cm, 16, f'Pagina {doc.page}')
     canvas.setStrokeColor(colors.HexColor('#e2e8f0'))
     canvas.line(2.5*cm, 26, W - 2.5*cm, 26)
@@ -594,7 +594,7 @@ story.append(sig_main)
 
 story.append(Spacer(1, 16))
 story.append(Paragraph(
-    'Documento gerado automaticamente  |  Reserva <b>${r.code}</b>  |  ${generatedDate}  |  RentalPro',
+    'Documento gerado automaticamente  |  Reserva <b>${r.code}</b>  |  ${generatedDate}  |  Reservas Ita',
     footer_s
 ))
 

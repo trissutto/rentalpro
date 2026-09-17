@@ -382,7 +382,7 @@ function buildOwnerReportEmail(
       </div>
 
       <div class="footer">
-        <p>RentalPro - Sistema de Gestão de Aluguel de Temporada</p>
+        <p>Reservas Ita - Sistema de Gestão de Aluguel de Temporada</p>
         <p style="margin: 0; font-size: 12px;">Este é um email automático, por favor não responda.</p>
       </div>
     </div>
