@@ -4,10 +4,26 @@ on:
     - cron: "*/30 * * * *"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ical-sync-production
+  cancel-in-progress: false
+
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Chamar sincronizacao do Reservas Ita
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
-                  curl -sS --fail -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" https://reservasita.com.br/api/cron/ical-sync
+          test -n "$CRON_SECRET" || { echo "CRON_SECRET ausente"; exit 1; }
+          response=$(curl --silent --show-error --fail-with-body \
+            --connect-timeout 15 --max-time 240 \
+            -H "x-cron-secret: $CRON_SECRET" \
+            https://reservasita.com.br/api/cron/ical-sync)
+          printf '%s\n' "$response"
+          printf '%s\n' "$response" | jq -e '.ok == true and ([.results[]? | select(.error != null)] | length == 0)'

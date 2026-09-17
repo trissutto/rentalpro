@@ -15,4 +15,10 @@ yarn-error.log
 .env.development
 .env.test
 .env.production
+# Local databases can contain payment credentials and guest data.
+# Production databases are provided by the persistent volume, never the image.
+**/*.db
+**/*.db-journal
+**/*.db-shm
+**/*.db-wal
 README.md
