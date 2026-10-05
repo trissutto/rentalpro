@@ -26,7 +26,9 @@ const nextConfig = {
   },
   async headers() {
     return [
-      { source: "/api/:path*", headers: [{ key: "Cache-Control", value: "private, no-store" }] },
+      // /api/files fica de fora: só serve fotos públicas (imóvel, inventário, banners)
+      // com nome único, e o "no-store" impedia o Cloudflare de guardá-las em cache.
+      { source: "/api/:path((?!files/).*)", headers: [{ key: "Cache-Control", value: "private, no-store" }] },
       {
         source: "/:path*",
         headers: [
@@ -36,8 +38,8 @@ const nextConfig = {
           { key: "X-Content-Type-Options", value: "nosniff" },
           // Não vaza a URL interna completa ao sair do site
           { key: "Referrer-Policy", value: "no-referrer" },
-          // Nenhuma página precisa de câmera, microfone ou localização
-          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+          // Câmera só para o próprio site (fotos do inventário); microfone e localização, nenhuma página
+          { key: "Permissions-Policy", value: "camera=(self), microphone=(), geolocation=()" },
           // Só HTTPS a partir da primeira visita
           { key: "Strict-Transport-Security", value: "max-age=15552000; includeSubDomains" },
         ],

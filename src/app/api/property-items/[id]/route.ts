@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuthUser } from "@/lib/auth";
+import { rm } from "fs/promises";
+import path from "path";
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
   const user = await getAuthUser(req);
@@ -33,5 +35,12 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   }
 
   await prisma.propertyItem.delete({ where: { id: params.id } });
+  // Fotos do item saem junto. O id é um cuid; a checagem garante que ".." ou
+  // vazio nunca vire um rm recursivo da pasta de uploads inteira.
+  if (/^[a-z0-9]+$/i.test(params.id)) {
+    await rm(path.join(process.cwd(), "prisma", "uploads", "inventario", params.id), {
+      recursive: true, force: true,
+    }).catch(() => {});
+  }
   return NextResponse.json({ success: true });
 }

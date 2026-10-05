@@ -262,6 +262,8 @@ model PropertyItem {
   roomId     String?
   quantity   Int      @default(1)
   notes      String?
+  // JSON: [{ url, thumb, at }] — fotos do item tiradas na casa (ver lib/inventory-photos)
+  photos     String   @default("[]")
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 

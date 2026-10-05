@@ -21,6 +21,35 @@ export function formatoSuportado(ext: string): boolean {
   return SUPORTADOS.includes(ext.toLowerCase().replace(/^\./, ""));
 }
 
+/**
+ * Fotos do inventário servem para conferir o estado do item (geladeira com
+ * amassado, TV com risco), não para anúncio. 1280px já mostra detalhe na tela
+ * do celular e, em WebP q72, fica na casa de 80–150 KB. A miniatura da lista
+ * fica em ~10 KB, então a tela do inventário abre leve mesmo no 4G.
+ *
+ * Diferente das fotos de imóvel, aqui não há URL antiga a preservar, então
+ * padronizamos tudo em WebP.
+ */
+export const INVENTARIO_LARGURA = 1280;
+export const INVENTARIO_QUALIDADE = 72;
+export const MINIATURA_LARGURA = 320;
+export const MINIATURA_QUALIDADE = 65;
+
+export async function gerarFotoInventario(original: Buffer) {
+  const base = sharp(original, { failOn: "none" }).rotate(); // respeita o EXIF antes de descartá-lo
+  const [foto, miniatura] = await Promise.all([
+    base.clone()
+      .resize({ width: INVENTARIO_LARGURA, height: INVENTARIO_LARGURA, fit: "inside", withoutEnlargement: true })
+      .webp({ quality: INVENTARIO_QUALIDADE })
+      .toBuffer(),
+    base.clone()
+      .resize({ width: MINIATURA_LARGURA, height: MINIATURA_LARGURA, fit: "cover" })
+      .webp({ quality: MINIATURA_QUALIDADE })
+      .toBuffer(),
+  ]);
+  return { foto, miniatura };
+}
+
 export interface ResultadoOtimizacao {
   buffer: Buffer;
   bytesAntes: number;

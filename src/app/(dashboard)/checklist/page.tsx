@@ -2,18 +2,19 @@
 
 import { useEffect, useState, useRef, useCallback, useMemo, memo } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Plus, X, Minus, Search, Package, ExternalLink, Loader2, LayoutGrid } from "lucide-react";
+import { Plus, X, Minus, Search, Package, ExternalLink, Loader2, LayoutGrid, Camera, Trash2 } from "lucide-react";
 import { apiRequest } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 import toast from "react-hot-toast";
 import Link from "next/link";
+import { lerFotos, MAX_FOTOS_POR_ITEM, type FotoInventario } from "@/lib/inventory-photos";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Property { id: string; name: string; city: string; }
 interface Item { id: string; name: string; category: string; unit: string; icon: string; }
 interface Room { id: string; name: string; type: string; floor: number; order: number; }
 interface PropItem {
-  id: string; itemId: string; roomId: string | null; quantity: number; item: Item;
+  id: string; itemId: string; roomId: string | null; quantity: number; item: Item; photos?: string;
 }
 
 const ROOM_ICONS: Record<string, string> = {
@@ -23,13 +24,39 @@ const ROOM_ICONS: Record<string, string> = {
 
 // ── Sub-components (outside parent to avoid re-creation) ──────────────────────
 
-const ItemCard = memo(function ItemCard({ pi, savingId, onQty, onRemove }: {
+/**
+ * Foto de celular chega com 3–12 MB. Reduzir no aparelho antes de enviar
+ * poupa o 4G de quem está na casa; o servidor ainda reconverte para WebP leve.
+ * Se o navegador não conseguir decodificar (ex.: HEIC fora do Safari), envia
+ * o original e o servidor resolve.
+ */
+async function reduzirFoto(file: File): Promise<Blob> {
+  try {
+    const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" } as ImageBitmapOptions);
+    const escala = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bitmap.width * escala);
+    canvas.height = Math.round(bitmap.height * escala);
+    canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+    const blob = await new Promise<Blob | null>(r => canvas.toBlob(r, "image/jpeg", 0.85));
+    return blob && blob.size < file.size ? blob : file;
+  } catch {
+    return file;
+  }
+}
+
+const ItemCard = memo(function ItemCard({ pi, savingId, onQty, onRemove, onPhotos }: {
   pi: PropItem;
   savingId: string | null;
   onQty: (id: string, qty: number) => void;
   onRemove: (id: string) => void;
+  onPhotos: (pi: PropItem) => void;
 }) {
   const saving = savingId === pi.id;
+  const fotos = useMemo(() => lerFotos(pi.photos), [pi.photos]);
+  const capa = fotos[fotos.length - 1];
+  const temp = pi.id.startsWith("temp-");
   return (
     <div className="flex items-center gap-2 bg-slate-50 hover:bg-slate-100 rounded-xl px-2.5 py-2 group transition-colors">
       <span className="text-base leading-none flex-shrink-0">{pi.item.icon}</span>
@@ -37,6 +64,19 @@ const ItemCard = memo(function ItemCard({ pi, savingId, onQty, onRemove }: {
         <p className="text-xs font-semibold text-slate-800 truncate">{pi.item.name}</p>
         <p className="text-[10px] text-slate-400">{pi.item.unit}</p>
       </div>
+      <button onClick={() => onPhotos(pi)} disabled={temp}
+        title={fotos.length ? `${fotos.length} foto(s)` : "Fotografar item"}
+        aria-label={`Fotos de ${pi.item.name}`}
+        className="relative w-6 h-6 rounded-md flex-shrink-0 overflow-hidden bg-white border border-slate-200 hover:border-brand-400 flex items-center justify-center transition disabled:opacity-40">
+        {capa
+          ? <img src={capa.thumb} alt="" loading="lazy" className="w-full h-full object-cover" />
+          : <Camera size={13} className="text-slate-500" />}
+        {fotos.length > 1 && (
+          <span className="absolute bottom-0 right-0 bg-brand-600 text-white text-[8px] font-bold leading-none px-1 py-0.5 rounded-tl">
+            {fotos.length}
+          </span>
+        )}
+      </button>
       <div className="flex items-center gap-1 flex-shrink-0">
         <button onClick={() => onQty(pi.id, pi.quantity - 1)} disabled={saving}
           className="w-5 h-5 rounded-full bg-white border border-slate-200 hover:bg-red-50 flex items-center justify-center transition-colors">
@@ -58,13 +98,14 @@ const ItemCard = memo(function ItemCard({ pi, savingId, onQty, onRemove }: {
   );
 });
 
-const RoomColumn = memo(function RoomColumn({ room, items, savingId, onOpen, onQty, onRemove }: {
+const RoomColumn = memo(function RoomColumn({ room, items, savingId, onOpen, onQty, onRemove, onPhotos }: {
   room: Room;
   items: PropItem[];
   savingId: string | null;
   onOpen: (roomId: string | null, label: string) => void;
   onQty: (id: string, qty: number) => void;
   onRemove: (id: string) => void;
+  onPhotos: (pi: PropItem) => void;
 }) {
   const isGeral = room.id === "NONE";
   const icon = ROOM_ICONS[room.type] || "📦";
@@ -72,7 +113,7 @@ const RoomColumn = memo(function RoomColumn({ room, items, savingId, onOpen, onQ
     <div className={cn(
       "flex-shrink-0 flex flex-col bg-white rounded-2xl border shadow-sm",
       isGeral ? "border-slate-200 border-dashed" : "border-slate-100"
-    )} style={{ width: 232 }}>
+    )} style={{ width: 264 }}>
       {/* Header */}
       <div className={cn("px-3 py-3 border-b flex items-center gap-2.5 rounded-t-2xl",
         isGeral ? "bg-slate-50 border-slate-100" : "bg-white border-slate-100")}>
@@ -94,7 +135,7 @@ const RoomColumn = memo(function RoomColumn({ room, items, savingId, onOpen, onQ
       <div className="flex-1 p-2 space-y-1.5 overflow-y-auto" style={{ maxHeight: 380 }}>
         {items.length === 0 && <p className="text-xs text-slate-300 text-center py-6">Vazio</p>}
         {items.map(pi => (
-          <ItemCard key={pi.id} pi={pi} savingId={savingId} onQty={onQty} onRemove={onRemove} />
+          <ItemCard key={pi.id} pi={pi} savingId={savingId} onQty={onQty} onRemove={onRemove} onPhotos={onPhotos} />
         ))}
       </div>
       {/* Add */}
@@ -125,6 +166,10 @@ export default function InventarioPage() {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [pendingIds, setPendingIds] = useState<string[]>([]);
   const searchRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const [photoItemId, setPhotoItemId] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(0);
+  const [viewing, setViewing] = useState<FotoInventario | null>(null);
 
   // ── Load on mount ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -233,6 +278,55 @@ export default function InventarioPage() {
     }
   }, []);
 
+  // ── Fotos ──────────────────────────────────────────────────────────────────
+  // Sem foto ainda: abre a câmera direto. Com foto: abre a galeria do item.
+  const openPhotos = useCallback((pi: PropItem) => {
+    setPhotoItemId(pi.id);
+    if (lerFotos(pi.photos).length === 0) cameraRef.current?.click();
+  }, []);
+
+  const uploadPhotos = useCallback(async (propItemId: string, files: File[]) => {
+    setPhotoItemId(propItemId);
+    setUploading(n => n + files.length);
+    // Uma por vez: no 4G, várias em paralelo competem e todas demoram
+    for (const file of files) {
+      try {
+        const fd = new FormData();
+        fd.append("file", await reduzirFoto(file), "foto.jpg");
+        const token = localStorage.getItem("token");
+        const res = await fetch(`/api/property-items/${propItemId}/photos`, {
+          method: "POST", body: fd, cache: "no-store",
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        setPropItems(prev => prev.map(pi => pi.id === propItemId ? data.propertyItem : pi));
+      } catch (e) {
+        toast.error(e instanceof Error && e.message ? e.message : "Erro ao enviar foto");
+      } finally {
+        setUploading(n => n - 1);
+      }
+    }
+  }, []);
+
+  const deletePhoto = useCallback(async (propItemId: string, url: string) => {
+    if (!confirm("Apagar esta foto?")) return;
+    try {
+      const res = await apiRequest(`/api/property-items/${propItemId}/photos`, {
+        method: "DELETE", body: JSON.stringify({ url }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setPropItems(prev => prev.map(pi => pi.id === propItemId ? data.propertyItem : pi));
+      setViewing(null);
+    } catch {
+      toast.error("Erro ao apagar foto");
+    }
+  }, []);
+
+  const photoItem = photoItemId ? propItems.find(pi => pi.id === photoItemId) : undefined;
+  const photoList = useMemo(() => lerFotos(photoItem?.photos), [photoItem?.photos]);
+
   // ── Derived data (memoized) ────────────────────────────────────────────────
   const columns: Room[] = useMemo(() => [
     ...rooms,
@@ -311,7 +405,7 @@ export default function InventarioPage() {
       {loading ? (
         <div className="flex gap-4">
           {[1, 2, 3, 4].map(i => (
-            <div key={i} className="skeleton rounded-2xl flex-shrink-0" style={{ width: 232, height: 300 }} />
+            <div key={i} className="skeleton rounded-2xl flex-shrink-0" style={{ width: 264, height: 300 }} />
           ))}
         </div>
       ) : rooms.length === 0 ? (
@@ -335,6 +429,7 @@ export default function InventarioPage() {
               onOpen={openDrawer}
               onQty={updateQty}
               onRemove={removeItem}
+              onPhotos={openPhotos}
             />
           ))}
         </div>
@@ -424,6 +519,96 @@ export default function InventarioPage() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* capture="environment": no celular abre direto a câmera traseira */}
+      <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden"
+        onChange={e => {
+          const files = Array.from(e.target.files || []);
+          e.target.value = "";
+          if (photoItemId && files.length) uploadPhotos(photoItemId, files);
+        }} />
+
+      {/* Galeria do item */}
+      <AnimatePresence>
+        {photoItem && (photoList.length > 0 || uploading > 0) && (
+          <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setPhotoItemId(null); }}>
+            <motion.div
+              className="modal-content"
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 32, stiffness: 320 }}
+              onClick={e => e.stopPropagation()}
+              style={{ maxHeight: "85vh", display: "flex", flexDirection: "column" }}
+            >
+              <div className="flex items-center justify-between mb-4 flex-shrink-0">
+                <div>
+                  <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">Fotos do item</p>
+                  <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2 mt-0.5">
+                    <span>{photoItem.item.icon}</span>{photoItem.item.name}
+                  </h3>
+                </div>
+                <button onClick={() => setPhotoItemId(null)}
+                  className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 flex items-center justify-center">
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="overflow-y-auto flex-1 grid grid-cols-3 gap-2 content-start">
+                {photoList.map(f => (
+                  <button key={f.url} onClick={() => setViewing(f)}
+                    className="relative aspect-square rounded-xl overflow-hidden bg-slate-100">
+                    <img src={f.thumb} alt="" loading="lazy" className="w-full h-full object-cover" />
+                    <span className="absolute bottom-0 inset-x-0 bg-black/45 text-white text-[9px] px-1.5 py-0.5 text-left">
+                      {new Date(f.at).toLocaleDateString("pt-BR")}
+                    </span>
+                  </button>
+                ))}
+                {Array.from({ length: uploading }).map((_, i) => (
+                  <div key={`up-${i}`} className="aspect-square rounded-xl bg-slate-100 flex items-center justify-center">
+                    <Loader2 size={18} className="animate-spin text-brand-400" />
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex-shrink-0 pt-3 border-t border-slate-100 mt-3">
+                <button onClick={() => cameraRef.current?.click()}
+                  disabled={photoList.length + uploading >= MAX_FOTOS_POR_ITEM}
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold transition disabled:opacity-50">
+                  <Camera size={16} /> Tirar outra foto
+                </button>
+                <p className="text-[10px] text-slate-400 text-center mt-2">
+                  {photoList.length} de {MAX_FOTOS_POR_ITEM} fotos
+                </p>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Foto em tamanho grande */}
+      {viewing && photoItem && (
+        <div className="fixed inset-0 z-[60] bg-black/90 flex flex-col" onClick={() => setViewing(null)}>
+          <div className="flex items-center justify-between p-3 text-white" onClick={e => e.stopPropagation()}>
+            <span className="text-sm">
+              {photoItem.item.name} · {new Date(viewing.at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}
+            </span>
+            <div className="flex gap-2">
+              <button onClick={() => deletePhoto(photoItem.id, viewing.url)}
+                className="w-9 h-9 rounded-xl bg-white/10 hover:bg-red-500/80 flex items-center justify-center" aria-label="Apagar foto">
+                <Trash2 size={16} />
+              </button>
+              <button onClick={() => setViewing(null)}
+                className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center" aria-label="Fechar">
+                <X size={18} />
+              </button>
+            </div>
+          </div>
+          <div className="flex-1 flex items-center justify-center p-3 min-h-0">
+            <img src={viewing.url} alt={photoItem.item.name} className="max-w-full max-h-full object-contain rounded-lg" />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
